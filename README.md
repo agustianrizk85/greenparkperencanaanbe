@@ -1,92 +1,57 @@
-# Perencanaan API — Qualified Demand Control Tower
+# Perencanaan API — Design Readiness Control Tower
 
-Go (stdlib-only) backend for the Greenpark **Perencanaan** (planning / demand)
-control tower. It serves the marketing-funnel command dashboard used by the CEO
-war-room: funnel volume, North-Star KPIs, channel performance, lead quality,
-per-project demand & readiness, the digital-asset registry, winning campaigns,
-CEO commands and early-warning alerts.
+Go (stdlib-only) backend for the Greenpark **Perencanaan** (planning) department
+dashboard — the **Design Readiness Control Tower**. It tracks every unit through
+the build-readiness pipeline (Akad → TTD Konsumen → SPK → Mulai Bangun), design
+gates, drafting-team capacity and early-warning bottlenecks.
 
-The architecture mirrors the other Greenpark services (e.g. `backend/teknik`):
-a clean **repository → service → HTTP transport** layering with an in-memory,
-concurrency-safe store seeded with representative data, token-based auth
-(PBKDF2 + opaque bearer tokens), and generic CRUD wiring for every master-data
-resource. No external dependencies.
+The data set is a snapshot exported from the department's Excel monitors
+(*Progres Monitor Persiapan Pembangunan GP* + *Data Master Proyek*): 32 master
+projects, 352 units, and a project code map. It is **embedded** in the binary
+(`internal/repository/data.json`, via `go:embed`) and served **verbatim**; the
+readiness model (pipeline, gates, capacity, alerts, commands) is derived on the
+client (see `frontend/perencanaan/src/lib/compute.ts`).
+
+## Architecture
+
+```
+cmd/server            composition root — wires repository -> service -> HTTP
+internal/
+  config              env-based configuration (PERENCANAAN_PORT, ...)
+  auth                PBKDF2 password hashing + in-memory bearer-token sessions
+  domain              User entity (auth)
+  repository          embedded data.json snapshot + seeded user accounts
+  service             auth use-cases + raw data accessor
+  transport/http      router, handlers, middleware, JSON helpers
+```
+
+## Auth
+
+- `POST /api/auth/login` → `{ token, user }`. Send `Authorization: Bearer <token>` on protected calls.
+- Default accounts: **admin / admin123** and **viewer / viewer123** (change in any real deployment).
+
+## API
+
+| Method · Path            | Description                                            |
+| ------------------------ | ----------------------------------------------------- |
+| `GET /api/health`        | Liveness probe (public)                               |
+| `POST /api/auth/login`   | Login (public)                                        |
+| `GET /api/auth/me`       | Current user (auth)                                   |
+| `POST /api/auth/logout`  | Revoke token (auth)                                   |
+| `GET /api/data`          | Raw planning snapshot `{ today, projects, units, codeMap }` (auth) |
 
 ## Run
 
 ```bash
 cd backend/perencanaan
-go run ./cmd/server        # listens on http://localhost:8082
-go test ./...              # service unit tests
+go run ./cmd/server
+# perencanaan API listening on http://localhost:8082
 ```
 
-Configuration (environment variables, with defaults):
+| Variable                    | Default | Description         |
+| --------------------------- | ------- | ------------------- |
+| `PERENCANAAN_PORT`          | `8082`  | HTTP port           |
+| `PERENCANAAN_ALLOW_ORIGIN`  | `*`     | CORS allowed origin |
 
-| Variable                    | Default | Purpose                |
-| --------------------------- | ------- | ---------------------- |
-| `PERENCANAAN_PORT`          | `8082`  | HTTP listen port       |
-| `PERENCANAAN_ALLOW_ORIGIN`  | `*`     | CORS allowed origin    |
-
-## Auth
-
-All `/api/*` routes except `GET /api/health` and `POST /api/auth/login` require
-an `Authorization: Bearer <token>` header.
-
-Seeded demo users:
-
-| Username | Password   | Role               |
-| -------- | ---------- | ------------------ |
-| `admin`  | `admin123` | Kadep Perencanaan  |
-| `mkt`    | `mkt12345` | Marketing          |
-
-## API
-
-### Session
-
-| Method | Path               | Description                       |
-| ------ | ------------------ | --------------------------------- |
-| POST   | `/api/auth/login`  | `{username,password}` → token+user |
-| GET    | `/api/auth/me`     | Current user                      |
-| POST   | `/api/auth/logout` | Revoke the bearer token           |
-| GET    | `/api/health`      | Liveness probe                    |
-
-### Aggregate
-
-| Method | Path                 | Description                                        |
-| ------ | -------------------- | -------------------------------------------------- |
-| GET    | `/api/dashboard`     | Full payload (all collections + derived `summary`) |
-| GET    | `/api/summary`       | Derived executive summary only                     |
-| GET    | `/api/projects/{id}` | Single project                                     |
-
-### Master data (full CRUD: `GET` list, `POST`, `PUT /{id}`, `DELETE /{id}`)
-
-`funnel`, `kpis`, `channels`, `projects`, `assets`, `ig-accounts`, `handover`,
-`winning`, `commands`, `reason-codes`.
-
-### Singletons (`GET` read + `PUT` replace)
-
-`context`, `lead-quality`, `content`, `alerts`.
-
-## Derived summary
-
-`GET /api/summary` (also embedded in `/api/dashboard`) is computed server-side so
-the headline numbers always reconcile with the editable master data:
-
-- `totalLeads`, `totalMQL`, `totalSpend` — summed from the **channels** matrix
-- `mqlRate` = `totalMQL / totalLeads`
-- `cpl` = `totalSpend / totalLeads`, `costPerBooking` = `totalSpend / totalBooking`
-- `totalBooking` — summed from **projects**
-- `achievement` = `context.bookingYTD / context.goal`
-- `redAlerts` — count of red **alerts**; `openCommands` — **commands** not `done`
-
-## Layout
-
-```
-cmd/server/main.go              Composition root + graceful shutdown
-internal/config                 Env-driven configuration
-internal/auth                   PBKDF2 hashing + in-memory session store
-internal/domain                 Core entities (the JSON contract)
-internal/repository             Generic collection + in-memory store + seed
-internal/service                Business logic, CRUD validation, summary, auth
-internal/transport/http         Router, handlers, middleware, JSON responses
-```
+To refresh the data, replace `internal/repository/data.json` with a new export
+and rebuild.

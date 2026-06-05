@@ -17,95 +17,18 @@ func NewHandler(svc *service.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-/* ---- Generic CRUD handler factories ----------------------------------- */
-
-// handleList serves GET collection requests.
-func handleList[T any](fn func() []T) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, fn())
-	}
-}
-
-// handleCreate serves POST requests, decoding the body and returning 201.
-func handleCreate[T any](fn func(T) (T, error)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var in T
-		if !decodeJSON(w, r, &in) {
-			return
-		}
-		out, err := fn(in)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusCreated, out)
-	}
-}
-
-// handleUpdate serves PUT /{id} requests.
-func handleUpdate[T any](fn func(string, T) (T, error)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var in T
-		if !decodeJSON(w, r, &in) {
-			return
-		}
-		out, err := fn(r.PathValue("id"), in)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
-}
-
-// handleDelete serves DELETE /{id} requests, returning 204.
-func handleDelete(fn func(string) error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := fn(r.PathValue("id")); err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}
-}
-
-// handleUpdateSingleton serves PUT requests for singleton resources (no id).
-func handleUpdateSingleton[T any](fn func(T) (T, error)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var in T
-		if !decodeJSON(w, r, &in) {
-			return
-		}
-		out, err := fn(in)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, out)
-	}
-}
-
-/* ---- Dashboard / aggregate -------------------------------------------- */
+/* ---- Health + data ----------------------------------------------------- */
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "perencanaan"})
 }
 
-func (h *Handler) dashboard(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, h.svc.Dashboard())
-}
-
-func (h *Handler) summary(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, h.svc.Summary())
-}
-
-func (h *Handler) projectByID(w http.ResponseWriter, r *http.Request) {
-	project, err := h.svc.ProjectByID(r.PathValue("id"))
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, project)
+// data serves the raw planning snapshot (today, projects, units, codeMap)
+// byte-for-byte. The readiness model is computed on the client.
+func (h *Handler) data(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(h.svc.Data())
 }
 
 /* ---- Auth -------------------------------------------------------------- */
