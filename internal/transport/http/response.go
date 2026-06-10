@@ -48,6 +48,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "validation failed: required field is missing")
 	case errors.Is(err, service.ErrInvalidCredentials):
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
+	case errors.Is(err, service.ErrForbidden):
+		writeError(w, http.StatusForbidden, "you are not permitted to perform this action")
 	default:
 		log.Printf("perencanaan: unexpected error: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")

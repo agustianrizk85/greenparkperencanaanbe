@@ -1,0 +1,290 @@
+[
+  {
+    "luas": "4.653 m2", 
+    "name": "Le Hauz Premiere", 
+    "gp": "GP4", 
+    "no": 1, 
+    "units": 63, 
+    "types": 6, 
+    "lokasi": "Leuwinanggung"
+  }, 
+  {
+    "luas": "10.710 m2", 
+    "name": "Le Hauz Signature", 
+    "gp": "GP1", 
+    "no": 2, 
+    "units": 152, 
+    "types": 7, 
+    "lokasi": "Curug, Bojongsari"
+  }, 
+  {
+    "luas": "1.399 m2", 
+    "name": "The Hauz Premiere", 
+    "gp": "GP2", 
+    "no": 3, 
+    "units": 24, 
+    "types": 6, 
+    "lokasi": "Jagakarsa"
+  }, 
+  {
+    "luas": "7.684 m2", 
+    "name": "Z Hauz Limo 2", 
+    "gp": "GP3", 
+    "no": 4, 
+    "units": 98, 
+    "types": 7, 
+    "lokasi": "Limo"
+  }, 
+  {
+    "luas": "2.505 m2", 
+    "name": "Tha Hauz Cilodong", 
+    "gp": "GP3", 
+    "no": 5, 
+    "units": 35, 
+    "types": 5, 
+    "lokasi": "Cilodong"
+  }, 
+  {
+    "luas": "2.090 m2", 
+    "name": "Vertihome Serua", 
+    "gp": "GP1", 
+    "no": 6, 
+    "units": 30, 
+    "types": 5, 
+    "lokasi": "Serua"
+  }, 
+  {
+    "luas": "5.430 m2", 
+    "name": "Z Hauz Limo", 
+    "gp": "GP3", 
+    "no": 7, 
+    "units": 68, 
+    "types": 6, 
+    "lokasi": "Limo"
+  }, 
+  {
+    "luas": "992 m2", 
+    "name": "The Hauz Pancoran Mas", 
+    "gp": "GP2", 
+    "no": 8, 
+    "units": 18, 
+    "types": 3, 
+    "lokasi": "Pancoran mas"
+  }, 
+  {
+    "luas": "3.675 m2", 
+    "name": "Le Hauz Limo", 
+    "gp": "GP2", 
+    "no": 9, 
+    "units": 42, 
+    "types": 5, 
+    "lokasi": "Limo"
+  }, 
+  {
+    "luas": "9.557 m2", 
+    "name": "Vertihauz Cibubur", 
+    "gp": "GP3", 
+    "no": 10, 
+    "units": 118, 
+    "types": 11, 
+    "lokasi": "Leuwinanggung"
+  }, 
+  {
+    "luas": "5.195 m2", 
+    "name": "Le Hauz Cibubur", 
+    "gp": "GP4", 
+    "no": 11, 
+    "units": 72, 
+    "types": 6, 
+    "lokasi": "Leuwinanggung"
+  }, 
+  {
+    "luas": "5.211 m2", 
+    "name": "Vertihauz Limo 3", 
+    "gp": "GP3", 
+    "no": 12, 
+    "units": 79, 
+    "types": 9, 
+    "lokasi": "Limo"
+  }, 
+  {
+    "luas": "6.031 m2", 
+    "name": "Vertihauz Limo 3 Ekstension", 
+    "gp": "GP3", 
+    "no": 13, 
+    "units": 66, 
+    "types": 7, 
+    "lokasi": "Limo"
+  }, 
+  {
+    "luas": "5.798 m2", 
+    "name": "Vertihauz Sawangan", 
+    "gp": "GP3", 
+    "no": 14, 
+    "units": 88, 
+    "types": 7, 
+    "lokasi": "Sawangan"
+  }, 
+  {
+    "luas": "1.129 m2", 
+    "name": "Vertihauz Sawangan Ekstension", 
+    "gp": "GP3", 
+    "no": 15, 
+    "units": 13, 
+    "types": 3, 
+    "lokasi": "Sawangan"
+  }, 
+  {
+    "luas": "893 m2", 
+    "name": "Vertihome Harjamukti", 
+    "gp": "GP2", 
+    "no": 16, 
+    "units": 18, 
+    "types": 3, 
+    "lokasi": "Harjamukti"
+  }, 
+  {
+    "luas": "994 m2", 
+    "name": "Vertihome Cimanggis 3", 
+    "gp": "GP1", 
+    "no": 17, 
+    "units": 20, 
+    "types": 3, 
+    "lokasi": "Tapos"
+  }, 
+  {
+    "luas": "4.116 m2", 
+    "name": "Vertihauz Limo 2", 
+    "gp": "GP3", 
+    "no": 18, 
+    "units": 61, 
+    "types": 3, 
+    "lokasi": "Limo"
+  }, 
+  {
+    "luas": "1.105 m2", 
+    "name": "Vertihauz Pekayon", 
+    "gp": "GP3", 
+    "no": 19, 
+    "units": 20, 
+    "types": 3, 
+    "lokasi": "Pekayon, Bekasi"
+  }, 
+  {
+    "luas": "1.424 m2", 
+    "name": "Vertihauz Cilodong 2", 
+    "gp": "GP3", 
+    "no": 20, 
+    "units": 26, 
+    "types": 3, 
+    "lokasi": "Cilodong"
+  }, 
+  {
+    "luas": "981 m2", 
+    "name": "Vertihome Jagakarsa", 
+    "gp": "GP4", 
+    "no": 21, 
+    "units": 19, 
+    "types": 3, 
+    "lokasi": "Jagakarsa, Jakarta Selatan"
+  }, 
+  {
+    "luas": "2.325 m2", 
+    "name": "Vertihome Cibinong", 
+    "gp": "GP2", 
+    "no": 22, 
+    "units": 41, 
+    "types": 3, 
+    "lokasi": "Cibinong, Bogor"
+  }, 
+  {
+    "luas": "1.023 m2", 
+    "name": "Vertihauz Limo", 
+    "gp": "GP3", 
+    "no": 23, 
+    "units": 18, 
+    "types": 3, 
+    "lokasi": "Limo"
+  }, 
+  {
+    "luas": "1.106 m2", 
+    "name": "Vertihauz Cilodong", 
+    "gp": "GP3", 
+    "no": 24, 
+    "units": 22, 
+    "types": 4, 
+    "lokasi": "Cilodong"
+  }, 
+  {
+    "luas": "3.504 m2", 
+    "name": "Bojong Gede Parc", 
+    "gp": "GP1", 
+    "no": 25, 
+    "units": 47, 
+    "types": 4, 
+    "lokasi": "Bojong Gede, Bogor"
+  }, 
+  {
+    "luas": "970 m2", 
+    "name": "Vertihauz Cimanggis", 
+    "gp": "GP3", 
+    "no": 26, 
+    "units": 19, 
+    "types": 2, 
+    "lokasi": "Cimanggis"
+  }, 
+  {
+    "luas": "800 m2", 
+    "name": "Vertihome Cibubur", 
+    "gp": "GP4", 
+    "no": 27, 
+    "units": 11, 
+    "types": 3, 
+    "lokasi": "Cibubur"
+  }, 
+  {
+    "luas": "1.690 m2", 
+    "name": "Vertihome Serpong", 
+    "gp": "GP4", 
+    "no": 28, 
+    "units": 28, 
+    "types": 4, 
+    "lokasi": "Serpong, Tangerang Selatan"
+  }, 
+  {
+    "luas": "7.165 m2", 
+    "name": "Mahaba Village", 
+    "gp": "GP3", 
+    "no": 29, 
+    "units": 71, 
+    "types": 4, 
+    "lokasi": "Cipadung, Bandung"
+  }, 
+  {
+    "luas": "140 m2", 
+    "name": "Vertihome Kukusan", 
+    "gp": "GP2", 
+    "no": 30, 
+    "units": 5, 
+    "types": 1, 
+    "lokasi": "Kukusan"
+  }, 
+  {
+    "luas": "1.707 m2", 
+    "name": "D'lisdin Cibinong 2 New Cluster", 
+    "gp": "GP2", 
+    "no": 31, 
+    "units": 25, 
+    "types": 3, 
+    "lokasi": "Cibinong, Bogor"
+  }, 
+  {
+    "luas": "1.500 m2", 
+    "name": "Vertihome Cimanggis", 
+    "gp": "GP2", 
+    "no": 32, 
+    "units": 26, 
+    "types": 3, 
+    "lokasi": "Cimanggis"
+  }
+]
