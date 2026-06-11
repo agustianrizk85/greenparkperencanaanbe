@@ -58,19 +58,35 @@ func (s TaskStatus) Weight() float64 {
 	}
 }
 
+// TaskDoc is metadata of the PDF a PIC uploads when a task enters Review. The
+// bytes are stored separately in the repository (not serialised in the Task).
+type TaskDoc struct {
+	Name       string `json:"name"`       // original filename
+	Size       int    `json:"size"`       // bytes
+	UploadedBy string `json:"uploadedBy"` // PIC username
+	UploadedAt string `json:"uploadedAt"` // RFC3339
+}
+
 // Task is a per-project instance of a deliverable in the planning tree.
 //
 //	Category -> Group -> Task (leaf, owned by one PIC, routed to one Division)
+//
+// Review flow: the PIC moves a task to Review and uploads a PDF (Doc); the head
+// of department (Kadep) then approves it (-> Selesai, recording ApprovedBy/At)
+// or rejects it (-> back to Proses).
 type Task struct {
-	ID        string     `json:"id"`        // stable slug, unique within a project
-	Category  string     `json:"category"`  // "Site Plan" | "Desain Unit Hunian" | "Desain Kawasan"
-	Group     string     `json:"group"`     // mid-level deliverable, e.g. "Denah", "Interior"
-	Name      string     `json:"name"`      // leaf deliverable name
-	PIC       string     `json:"pic"`       // username of the responsible author
-	Output    Division   `json:"output"`    // routed division (or DivNone)
-	Weighted  bool       `json:"weighted"`  // part of a "100%" milestone group
-	Status    TaskStatus `json:"status"`    //
-	UpdatedAt string     `json:"updatedAt"` // RFC3339 of last status change ("" if never)
+	ID         string     `json:"id"`        // stable slug, unique within a project
+	Category   string     `json:"category"`  // "Site Plan" | "Desain Unit Hunian" | "Desain Kawasan"
+	Group      string     `json:"group"`     // mid-level deliverable, e.g. "Denah", "Interior"
+	Name       string     `json:"name"`      // leaf deliverable name
+	PIC        string     `json:"pic"`       // username of the responsible author
+	Output     Division   `json:"output"`    // routed division (or DivNone)
+	Weighted   bool       `json:"weighted"`  // part of a "100%" milestone group
+	Status     TaskStatus `json:"status"`    //
+	UpdatedAt  string     `json:"updatedAt"` // RFC3339 of last status change ("" if never)
+	Doc        *TaskDoc   `json:"doc,omitempty"`        // review document, if uploaded
+	ApprovedBy string     `json:"approvedBy,omitempty"` // Kadep username (when approved)
+	ApprovedAt string     `json:"approvedAt,omitempty"` // RFC3339 (when approved)
 }
 
 // Project is a development project carrying the full deliverable task list.

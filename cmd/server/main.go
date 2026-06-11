@@ -31,6 +31,13 @@ func main() {
 	handler := httptransport.NewHandler(svc)
 	router := httptransport.NewRouter(handler, cfg.AllowOrigin)
 
+	// Populate sample data so a freshly started server already shows a
+	// realistic dashboard. Disable with PERENCANAAN_SEED_DEMO=false.
+	if cfg.SeedDemo {
+		svc.SeedDemoSystem()
+		log.Println("perencanaan: seeded sample data (set PERENCANAAN_SEED_DEMO=false to disable)")
+	}
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,

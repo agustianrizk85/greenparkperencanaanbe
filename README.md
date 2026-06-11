@@ -68,6 +68,17 @@ internal/
 | `PATCH /api/workdrawings/{id}`              | Advance a flow (`konsumen-selesai`/`ttd-konsumen`/`kontraktor-selesai`) |
 | `POST /api/workdrawings/{id}/revisi`        | AI revision analysis (placeholder)                   |
 | `GET /api/alerts`                           | Active SLA alerts, most-urgent first                 |
+| `GET /api/staff`                            | Department roster + per-author workload              |
+| `POST /api/admin/seed`                      | Fill sample data (CEO/Kadep) — "Isi Contoh"          |
+| `POST /api/admin/reset`                     | Delete all dynamic data (CEO/Kadep) — "Hapus Semua"  |
+
+## Sample data
+
+On startup the server seeds a realistic sample set (varied task progress + a
+spread of working-drawing flows across every SLA state) so the dashboard is
+populated immediately. Set `PERENCANAAN_SEED_DEMO=false` to start empty. CEO /
+Kadep can re-fill (`/api/admin/seed`) or wipe (`/api/admin/reset`) at any time
+from the dashboard header.
 
 ## Run
 
@@ -77,10 +88,11 @@ go run ./cmd/server
 # perencanaan API listening on http://localhost:8082
 ```
 
-| Variable                    | Default | Description         |
-| --------------------------- | ------- | ------------------- |
-| `PERENCANAAN_PORT`          | `8082`  | HTTP port           |
-| `PERENCANAAN_ALLOW_ORIGIN`  | `*`     | CORS allowed origin |
+| Variable                    | Default | Description                            |
+| --------------------------- | ------- | -------------------------------------- |
+| `PERENCANAAN_PORT`          | `8082`  | HTTP port                              |
+| `PERENCANAAN_ALLOW_ORIGIN`  | `*`     | CORS allowed origin                    |
+| `PERENCANAAN_SEED_DEMO`     | `true`  | Seed sample data on startup (`false` = empty) |
 
 The deliverable tree is defined in `internal/domain/template.go`; edit it there to
 change the business process. To change the seed portfolio, edit

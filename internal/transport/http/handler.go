@@ -1,6 +1,7 @@
 package http
 
 import (
+	"io"
 	"net/http"
 
 	"greenpark/perencanaan/internal/domain"
@@ -119,6 +120,103 @@ func (h *Handler) updateTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, detail)
 }
 
+func (h *Handler) addTask(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in service.AddTaskInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	detail, err := h.svc.AddTask(user.Role, r.PathValue("id"), in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, detail)
+}
+
+func (h *Handler) removeTask(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	detail, err := h.svc.RemoveTask(user.Role, r.PathValue("id"), r.PathValue("taskId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *Handler) reassignTask(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in service.ReassignTaskInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	detail, err := h.svc.ReassignTask(user.Role, r.PathValue("id"), r.PathValue("taskId"), in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+/* ---- Review flow: upload PDF, view, approve, reject -------------------- */
+
+func (h *Handler) uploadTaskDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := r.ParseMultipartForm(12 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid upload")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "cannot read file")
+		return
+	}
+	detail, err := h.svc.UploadTaskDoc(user, r.PathValue("id"), r.PathValue("taskId"), header.Filename, data)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *Handler) getTaskDoc(w http.ResponseWriter, r *http.Request) {
+	data, name, err := h.svc.TaskDoc(r.PathValue("id"), r.PathValue("taskId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "inline; filename=\""+name+"\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func (h *Handler) approveTask(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	detail, err := h.svc.ApproveTask(user, r.PathValue("id"), r.PathValue("taskId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *Handler) rejectTask(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	detail, err := h.svc.RejectTask(user, r.PathValue("id"), r.PathValue("taskId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
 /* ---- Task assignment (by PIC) ------------------------------------------ */
 
 // myTasks returns the authenticated user's assigned tasks, or — for a manager
@@ -189,4 +287,45 @@ func (h *Handler) reviseWorkDrawing(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) alerts(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, h.svc.Alerts())
+}
+
+/* ---- Staff / team ------------------------------------------------------ */
+
+func (h *Handler) staff(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, h.svc.Staff())
+}
+
+/* ---- Master reference data --------------------------------------------- */
+
+func (h *Handler) master(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, h.svc.Master())
+}
+
+/* ---- Admin: seed demo / reset process / reset master ------------------- */
+
+func (h *Handler) seedDemo(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.SeedDemo(user.Role); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "seeded"})
+}
+
+func (h *Handler) resetProses(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.ResetProses(user.Role); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reset-proses"})
+}
+
+func (h *Handler) resetMaster(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.ResetMaster(user.Role); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reset-master"})
 }
