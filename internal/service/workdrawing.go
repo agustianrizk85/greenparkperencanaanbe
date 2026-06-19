@@ -59,10 +59,8 @@ func (s *Service) CreateWorkDrawing(in CreateWorkDrawingInput) (WorkDrawingView,
 	if info == "" {
 		info = s.today()
 	}
+	// PIC opsional (nullable): biarkan kosong bila tidak diisi, terima nama custom.
 	pic := strings.TrimSpace(in.PIC)
-	if pic == "" {
-		pic = domain.PicAgus // gambar kerja is the drafter's deliverable by default
-	}
 	d := domain.WorkDrawing{
 		ProjectID:   in.ProjectID,
 		Konsumen:    strings.TrimSpace(in.Konsumen),

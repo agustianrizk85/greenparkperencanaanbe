@@ -1,8 +1,11 @@
 package http
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -47,6 +50,25 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Hijack passes through to the underlying ResponseWriter so the WebSocket
+// upgrade (gorilla) can take over the connection. Without this, wrapping the
+// writer hides http.Hijacker and the /api/ws handshake fails with HTTP 500.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("underlying ResponseWriter does not support hijacking")
+	}
+	return hj.Hijack()
+}
+
+// Flush passes through so streaming/flushing handlers keep working through the
+// wrapper.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // logger logs each request with method, path, status and latency.
 func logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +90,25 @@ func bearerToken(r *http.Request) string {
 		return strings.TrimSpace(after)
 	}
 	return ""
+}
+
+// bumpOnWrite bumps the realtime revision (broadcasting to all WebSocket
+// clients) after every successful mutating request. Reads pass through
+// untouched, so a single data change fans out to every open dashboard.
+func bumpOnWrite(hub *wsHub) middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+				next.ServeHTTP(w, r)
+				return
+			}
+			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rec, r)
+			if rec.status >= 200 && rec.status < 300 {
+				hub.bump()
+			}
+		})
+	}
 }
 
 // requireAuth rejects requests without a valid bearer token and stores the

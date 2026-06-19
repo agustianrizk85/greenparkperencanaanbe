@@ -11,11 +11,12 @@ import (
 // Handler holds the dependencies for the HTTP handlers.
 type Handler struct {
 	svc *service.Service
+	hub *wsHub
 }
 
 // NewHandler creates a Handler bound to the given service.
 func NewHandler(svc *service.Service) *Handler {
-	return &Handler{svc: svc}
+	return &Handler{svc: svc, hub: newWSHub()}
 }
 
 /* ---- Health ------------------------------------------------------------ */

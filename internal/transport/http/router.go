@@ -12,6 +12,8 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	// --- Public ---
 	mux.HandleFunc("GET /api/health", h.health)
 	mux.HandleFunc("POST /api/auth/login", h.login)
+	// Realtime push: validates its own ?token= (browsers can't set WS headers).
+	mux.HandleFunc("GET /api/ws", h.ws)
 
 	// --- Protected ---
 	authed := http.NewServeMux()
@@ -61,8 +63,9 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	authed.HandleFunc("POST /api/admin/reset-proses", h.resetProses)
 	authed.HandleFunc("POST /api/admin/reset-master", h.resetMaster)
 
-	// Mount the protected mux behind the auth middleware.
-	mux.Handle("/api/", requireAuth(h.resolveUser)(authed))
+	// Mount the protected mux behind auth, then bump the realtime revision on
+	// every successful write so all connected dashboards refresh instantly.
+	mux.Handle("/api/", requireAuth(h.resolveUser)(bumpOnWrite(h.hub)(authed)))
 
 	return chain(mux, logger, cors(allowOrigin))
 }
