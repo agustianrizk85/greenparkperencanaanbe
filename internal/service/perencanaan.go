@@ -24,13 +24,14 @@ var (
 
 // Service exposes the planning use-cases plus authentication.
 type Service struct {
-	repo     *repository.Memory
+	repo     repository.Store
 	sessions *auth.SessionStore
 	now      func() time.Time // injectable clock (defaults to time.Now)
 }
 
-// New builds a Service from the store and session manager.
-func New(repo *repository.Memory, sessions *auth.SessionStore) *Service {
+// New builds a Service from the store and session manager. repo may be the
+// in-memory store or the Postgres-backed one — both satisfy repository.Store.
+func New(repo repository.Store, sessions *auth.SessionStore) *Service {
 	return &Service{repo: repo, sessions: sessions, now: time.Now}
 }
 

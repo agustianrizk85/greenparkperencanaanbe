@@ -55,8 +55,17 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	// Department roster / staff workload.
 	authed.HandleFunc("GET /api/staff", h.staff)
 
+	// Dynamic PIC account management (CEO / Kadep): list, create, delete.
+	authed.HandleFunc("GET /api/users", h.listUsers)
+	authed.HandleFunc("POST /api/users", h.createUser)
+	authed.HandleFunc("DELETE /api/users/{username}", h.deleteUser)
+
 	// Master reference data (projects, deliverable template, accounts, divisions).
 	authed.HandleFunc("GET /api/master", h.master)
+
+	// Full cicle Kanban board mirror (read for all; push sync CEO/Kadep only).
+	authed.HandleFunc("GET /api/cicle-board", h.cicleBoard)
+	authed.HandleFunc("POST /api/cicle-board", h.setCicleBoard)
 
 	// Admin (CEO & Kadep only): seed sample data, reset process only, or rebuild master.
 	authed.HandleFunc("POST /api/admin/seed", h.seedDemo)

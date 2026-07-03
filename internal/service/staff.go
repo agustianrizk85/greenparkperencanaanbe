@@ -8,7 +8,7 @@ import (
 
 // StaffMember is one department account enriched with its current workload.
 // CEO / Kadep are listed for the org view but carry no deliverable tasks; the
-// three authors (Randi, Ananto, Agus) own the tasks and gambar-kerja flows.
+// design authors (Randi, Ananto, Agus, Rio) own the tasks and gambar-kerja flows.
 type StaffMember struct {
 	Username       string `json:"username"`
 	Name           string `json:"name"`
@@ -50,11 +50,20 @@ func (s *Service) Staff() []StaffMember {
 		}
 	}
 
-	// Count active (not-done) working-drawing flows per PIC.
+	// Fold gambar-kerja (working-drawing) flows into each PIC's workload so the
+	// dashboard reflects the REAL work synced from cicle, not just the template
+	// deliverable tree. A done drawing counts as completed; an open one as
+	// in-progress (and as an active-drawing).
 	activeWD := map[string]int{}
 	for _, d := range s.repo.WorkDrawings() {
-		if d.Status != domain.WDDone {
+		total[d.PIC]++
+		if d.Status == domain.WDDone {
+			done[d.PIC]++
+			weight[d.PIC] += 1
+		} else {
 			activeWD[d.PIC]++
+			inprog[d.PIC]++
+			weight[d.PIC] += domain.StatusProgress.Weight()
 		}
 	}
 

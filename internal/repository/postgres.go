@@ -1,0 +1,177 @@
+package repository
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"greenpark/perencanaan/internal/domain"
+
+	_ "github.com/jackc/pgx/v5/stdlib" // pgx database/sql driver ("pgx")
+)
+
+// Persistent is a PostgreSQL-backed Store. It embeds the in-memory *Memory for
+// all read logic and seeding, and mirrors the full state to a single JSONB row
+// after every mutation. On startup it restores the saved snapshot, so the
+// dashboard survives restarts. The in-memory business logic is unchanged.
+type Persistent struct {
+	*Memory
+	db    *sql.DB
+	fresh bool // true when the database had no prior snapshot (first run)
+}
+
+// Fresh reports whether the database was empty on startup (so callers may run
+// one-time demo seeding). It is false once a snapshot has ever been saved.
+func (p *Persistent) Fresh() bool { return p.fresh }
+
+// NewPersistent connects to Postgres, ensures the state table, and restores the
+// saved snapshot. On an empty database it keeps the freshly seeded portfolio and
+// writes the initial snapshot.
+func NewPersistent(dsn string) (*Persistent, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open: %w", err)
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(time.Hour)
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("connect: %w", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS perencanaan_state (
+		id INT PRIMARY KEY,
+		data JSONB NOT NULL,
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+
+	p := &Persistent{Memory: NewMemory(), db: db}
+
+	var data []byte
+	switch err := db.QueryRow(`SELECT data FROM perencanaan_state WHERE id = 1`).Scan(&data); err {
+	case sql.ErrNoRows:
+		// Fresh database — persist the seeded portfolio as the initial snapshot.
+		p.fresh = true
+		if err := p.save(); err != nil {
+			return nil, fmt.Errorf("seed snapshot: %w", err)
+		}
+	case nil:
+		if err := p.Memory.LoadJSON(data); err != nil {
+			return nil, fmt.Errorf("restore: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("load: %w", err)
+	}
+	return p, nil
+}
+
+// Close releases the database connection.
+func (p *Persistent) Close() error { return p.db.Close() }
+
+// save writes the full in-memory state to the single state row.
+func (p *Persistent) save() error {
+	data, err := p.Memory.SnapshotJSON()
+	if err != nil {
+		return err
+	}
+	_, err = p.db.Exec(`INSERT INTO perencanaan_state (id, data, updated_at)
+		VALUES (1, $1, now())
+		ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, data)
+	return err
+}
+
+/* ---- mutations: delegate to Memory, then persist ----------------------- */
+
+func (p *Persistent) ResetProses() { p.Memory.ResetProses(); _ = p.save() }
+func (p *Persistent) ResetMaster() { p.Memory.ResetMaster(); _ = p.save() }
+
+func (p *Persistent) MutateTask(projectID, taskID string, fn func(*domain.Task)) bool {
+	ok := p.Memory.MutateTask(projectID, taskID, fn)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) SetTaskDoc(projectID, taskID string, doc domain.TaskDoc, data []byte) bool {
+	ok := p.Memory.SetTaskDoc(projectID, taskID, doc, data)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) AddUser(u domain.User) bool {
+	ok := p.Memory.AddUser(u)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) DeleteUser(username string) bool {
+	ok := p.Memory.DeleteUser(username)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) AddProject(gp, name, lokasi, luas string, units, types int, spec domain.ProjectSpec) domain.Project {
+	pr := p.Memory.AddProject(gp, name, lokasi, luas, units, types, spec)
+	_ = p.save()
+	return pr
+}
+
+func (p *Persistent) AddTask(projectID string, t domain.Task) (domain.Task, bool) {
+	task, ok := p.Memory.AddTask(projectID, t)
+	if ok {
+		_ = p.save()
+	}
+	return task, ok
+}
+
+func (p *Persistent) RemoveTask(projectID, taskID string) bool {
+	ok := p.Memory.RemoveTask(projectID, taskID)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) UpdateTaskMeta(projectID, taskID, pic string, output domain.Division) bool {
+	ok := p.Memory.UpdateTaskMeta(projectID, taskID, pic, output)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) UpdateTaskStatus(projectID, taskID string, status domain.TaskStatus, at string) (string, bool) {
+	pic, ok := p.Memory.UpdateTaskStatus(projectID, taskID, status, at)
+	if ok {
+		_ = p.save()
+	}
+	return pic, ok
+}
+
+func (p *Persistent) AddWorkDrawing(d domain.WorkDrawing) domain.WorkDrawing {
+	wd := p.Memory.AddWorkDrawing(d)
+	_ = p.save()
+	return wd
+}
+
+func (p *Persistent) MutateWorkDrawing(id string, fn func(*domain.WorkDrawing)) (domain.WorkDrawing, bool) {
+	wd, ok := p.Memory.MutateWorkDrawing(id, fn)
+	if ok {
+		_ = p.save()
+	}
+	return wd, ok
+}
+
+func (p *Persistent) SetCicleBoard(data json.RawMessage) {
+	p.Memory.SetCicleBoard(data)
+	_ = p.save()
+}

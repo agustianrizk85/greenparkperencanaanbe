@@ -33,14 +33,29 @@ type masterProject struct {
 
 // Memory is the in-memory store.
 type Memory struct {
-	mu       sync.RWMutex
-	users    map[string]domain.User
-	projects map[string]*domain.Project // keyed by project ID
-	drawings map[string]*domain.WorkDrawing
-	docs     map[string][]byte // review PDF bytes, keyed by projectID + "/" + taskID
-	nextNo   int // next project number for additions
-	seqWD    int // monotonic counter for work-drawing IDs
-	seqTask  int // monotonic counter for dynamically added task IDs
+	mu         sync.RWMutex
+	users      map[string]domain.User
+	projects   map[string]*domain.Project // keyed by project ID
+	drawings   map[string]*domain.WorkDrawing
+	docs       map[string][]byte  // review PDF bytes, keyed by projectID + "/" + taskID
+	cicleBoard json.RawMessage    // raw mirror of the cicle Kanban board (columns+cards)
+	nextNo     int // next project number for additions
+	seqWD      int // monotonic counter for work-drawing IDs
+	seqTask    int // monotonic counter for dynamically added task IDs
+}
+
+// CicleBoard returns the stored raw cicle-board mirror (nil if never synced).
+func (m *Memory) CicleBoard() json.RawMessage {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cicleBoard
+}
+
+// SetCicleBoard replaces the stored cicle-board mirror.
+func (m *Memory) SetCicleBoard(data json.RawMessage) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cicleBoard = data
 }
 
 // NewMemory builds the store, seeding users and the project portfolio (each
@@ -218,6 +233,29 @@ func roleRank(role string) int {
 	}
 }
 
+// AddUser inserts or replaces an account. Returns false if the username already
+// exists (callers decide whether that is an error).
+func (m *Memory) AddUser(u domain.User) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.users[u.Username]; exists {
+		return false
+	}
+	m.users[u.Username] = u
+	return true
+}
+
+// DeleteUser removes an account by username. Returns false if it did not exist.
+func (m *Memory) DeleteUser(username string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.users[username]; !ok {
+		return false
+	}
+	delete(m.users, username)
+	return true
+}
+
 /* ---- Projects ---------------------------------------------------------- */
 
 // Projects returns all projects as copies, sorted by number.
@@ -373,4 +411,72 @@ func (m *Memory) MutateWorkDrawing(id string, fn func(*domain.WorkDrawing)) (dom
 	}
 	fn(d)
 	return *d, true
+}
+
+/* ---- Snapshot persistence (used by the Postgres-backed store) ---------- */
+
+// userSnap carries the password material that domain.User omits from JSON, so a
+// snapshot can round-trip accounts (including runtime-added PICs).
+type userSnap struct {
+	Username     string `json:"username"`
+	Name         string `json:"name"`
+	Role         string `json:"role"`
+	Salt         []byte `json:"salt"`
+	PasswordHash []byte `json:"passwordHash"`
+}
+
+type stateSnap struct {
+	Users      []userSnap                     `json:"users"`
+	Projects   map[string]*domain.Project     `json:"projects"`
+	Drawings   map[string]*domain.WorkDrawing `json:"drawings"`
+	Docs       map[string][]byte              `json:"docs"`
+	CicleBoard json.RawMessage                `json:"cicleBoard,omitempty"`
+	NextNo     int                            `json:"nextNo"`
+	SeqWD      int                            `json:"seqWD"`
+	SeqTask    int                            `json:"seqTask"`
+}
+
+// SnapshotJSON serialises the entire store (including password material) for
+// durable persistence. Safe for concurrent use.
+func (m *Memory) SnapshotJSON() ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	s := stateSnap{
+		Projects: m.projects, Drawings: m.drawings, Docs: m.docs,
+		CicleBoard: m.cicleBoard,
+		NextNo:     m.nextNo, SeqWD: m.seqWD, SeqTask: m.seqTask,
+	}
+	for _, u := range m.users {
+		s.Users = append(s.Users, userSnap{u.Username, u.Name, u.Role, u.Salt, u.PasswordHash})
+	}
+	return json.Marshal(s)
+}
+
+// LoadJSON replaces the store contents from a snapshot produced by SnapshotJSON.
+func (m *Memory) LoadJSON(data []byte) error {
+	var s stateSnap
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.users = map[string]domain.User{}
+	for _, u := range s.Users {
+		m.users[u.Username] = domain.User{Username: u.Username, Name: u.Name, Role: u.Role, Salt: u.Salt, PasswordHash: u.PasswordHash}
+	}
+	m.projects = s.Projects
+	if m.projects == nil {
+		m.projects = map[string]*domain.Project{}
+	}
+	m.drawings = s.Drawings
+	if m.drawings == nil {
+		m.drawings = map[string]*domain.WorkDrawing{}
+	}
+	m.docs = s.Docs
+	if m.docs == nil {
+		m.docs = map[string][]byte{}
+	}
+	m.cicleBoard = s.CicleBoard
+	m.nextNo, m.seqWD, m.seqTask = s.NextNo, s.SeqWD, s.SeqTask
+	return nil
 }

@@ -41,8 +41,19 @@ type Summary struct {
 	Alerts      AlertCounts    `json:"alerts"`
 }
 
-// picOrder fixes the display order of the three authors.
-var picOrder = []string{domain.PicRandi, domain.PicAnanto, domain.PicAgus}
+// authorUsernames returns the design-author (PIC) usernames, derived from the
+// user store — every account whose role is arsitek or drafter. This keeps the
+// framework dynamic: adding or removing a PIC account is reflected everywhere,
+// with no hardcoded name list. repo.Users() is already ordered (role, name).
+func (s *Service) authorUsernames() []string {
+	out := []string{}
+	for _, u := range s.repo.Users() {
+		if u.Role == domain.RoleArsitek || u.Role == domain.RoleDrafter {
+			out = append(out, u.Username)
+		}
+	}
+	return out
+}
 
 // Summary aggregates the portfolio into the headline metrics.
 func (s *Service) Summary() Summary {
@@ -50,6 +61,7 @@ func (s *Service) Summary() Summary {
 
 	sum := Summary{Today: s.today(), Projects: len(projects)}
 
+	picOrder := s.authorUsernames()
 	loads := map[string]*PICLoad{}
 	for _, pic := range picOrder {
 		loads[pic] = &PICLoad{PIC: pic}
@@ -78,6 +90,20 @@ func (s *Service) Summary() Summary {
 	}
 	if len(projects) > 0 {
 		sum.AvgProgress = int(math.Round(progressSum / float64(len(projects))))
+	}
+	// Headline reflects the REAL tracked work (gambar kerja synced from cicle),
+	// not the aspirational deliverable template. When work drawings exist, the
+	// portfolio Progress and "deliverable selesai" count them.
+	if wds := s.repo.WorkDrawings(); len(wds) > 0 {
+		doneWD := 0
+		for _, d := range wds {
+			if d.Status == domain.WDDone {
+				doneWD++
+			}
+		}
+		sum.Tasks = len(wds)
+		sum.TasksDone = doneWD
+		sum.AvgProgress = int(math.Round(float64(doneWD) / float64(len(wds)) * 100))
 	}
 	for pic, l := range loads {
 		if l.Total > 0 {

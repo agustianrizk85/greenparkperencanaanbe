@@ -27,11 +27,12 @@ type WorkDrawingView struct {
 
 // CreateWorkDrawingInput registers a new consumer working-drawing flow.
 type CreateWorkDrawingInput struct {
-	ProjectID string `json:"projectId"`
-	Konsumen  string `json:"konsumen"`
-	Unit      string `json:"unit"`
-	PIC       string `json:"pic"`
-	InfoMasuk string `json:"infoMasuk"` // YYYY-MM-DD; defaults to today
+	ProjectID   string                 `json:"projectId"`
+	Konsumen    string                 `json:"konsumen"`
+	Unit        string                 `json:"unit"`
+	PIC         string                 `json:"pic"`
+	InfoMasuk   string                 `json:"infoMasuk"`             // YYYY-MM-DD; defaults to today
+	Attachments []domain.WDAttachment  `json:"attachments,omitempty"` // optional linked files (e.g. cicle)
 }
 
 // WorkDrawings returns all flows enriched with SLA countdowns.
@@ -69,6 +70,7 @@ func (s *Service) CreateWorkDrawing(in CreateWorkDrawingInput) (WorkDrawingView,
 		InfoMasuk:   info,
 		KonsumenDue: domain.AddWorkingDays(info, konsumenSLAWorkdays),
 		Status:      domain.WDKonsumen,
+		Attachments: in.Attachments,
 	}
 	saved := s.repo.AddWorkDrawing(d)
 	projects := s.repo.Projects()

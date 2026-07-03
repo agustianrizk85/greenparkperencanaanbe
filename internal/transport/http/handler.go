@@ -296,6 +296,62 @@ func (h *Handler) staff(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, h.svc.Staff())
 }
 
+/* ---- Cicle board mirror (full Kanban synced from cicle) --------------- */
+
+func (h *Handler) cicleBoard(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(h.svc.CicleBoard())
+}
+
+func (h *Handler) setCicleBoard(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20)) // 32MB cap
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "gagal membaca body")
+		return
+	}
+	if err := h.svc.SetCicleBoard(user.Role, body); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "bytes": len(body)})
+}
+
+/* ---- Accounts (dynamic PIC management, CEO/Kadep) ---------------------- */
+
+func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	accounts, err := h.svc.Accounts(user.Role)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, accounts)
+}
+
+func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in service.CreateUserInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	acc, err := h.svc.CreateUser(user.Role, in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, acc)
+}
+
+func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.DeleteUser(user.Role, r.PathValue("username")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("username")})
+}
+
 /* ---- Master reference data --------------------------------------------- */
 
 func (h *Handler) master(w http.ResponseWriter, _ *http.Request) {

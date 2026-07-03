@@ -19,7 +19,7 @@ const (
 	RoleCEO     = "ceo"     // full overview, may do anything
 	RoleKadep   = "kadep"   // head of department, manages projects & assignments
 	RoleArsitek = "arsitek" // author of design + render deliverables (Randi, Ananto)
-	RoleDrafter = "drafter" // author of working drawings / gambar kerja (Agus)
+	RoleDrafter = "drafter" // author of working drawings / gambar kerja (Agus, Rio)
 )
 
 // Division is a downstream consumer that a finished deliverable is routed to.
@@ -130,4 +130,12 @@ type WorkDrawing struct {
 	KontraktorDone string            `json:"kontraktorDone"` // actual date, "" if pending
 	Status         WorkDrawingStatus `json:"status"`
 	RevisiNote     string            `json:"revisiNote"` // last AI revision analysis, "" if none
+	Attachments    []WDAttachment    `json:"attachments,omitempty"` // files (e.g. imported from cicle)
+}
+
+// WDAttachment is a file linked to a working drawing (name + download URL).
+// Populated e.g. by the cicle sync from a card's attachments.
+type WDAttachment struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }

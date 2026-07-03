@@ -24,16 +24,31 @@ import (
 func main() {
 	cfg := config.Load()
 
-	// Dependency wiring (composition root).
-	repo := repository.NewMemory()
+	// Dependency wiring (composition root). Storage backend is env-driven:
+	// PostgreSQL when PERENCANAAN_DATABASE_URL is set, otherwise in-memory.
+	var repo repository.Store
+	freshStore := true // in-memory always starts empty
+	if dsn := os.Getenv("PERENCANAAN_DATABASE_URL"); dsn != "" {
+		pg, err := repository.NewPersistent(dsn)
+		if err != nil {
+			log.Fatalf("perencanaan: postgres: %v", err)
+		}
+		defer func() { _ = pg.Close() }()
+		repo = pg
+		freshStore = pg.Fresh()
+		log.Println("perencanaan: using PostgreSQL store")
+	} else {
+		repo = repository.NewMemory()
+		log.Println("perencanaan: using in-memory store")
+	}
 	sessions := auth.NewSessionStore(12 * time.Hour)
 	svc := service.New(repo, sessions)
 	handler := httptransport.NewHandler(svc)
 	router := httptransport.NewRouter(handler, cfg.AllowOrigin)
 
-	// Populate sample data so a freshly started server already shows a
-	// realistic dashboard. Disable with PERENCANAAN_SEED_DEMO=false.
-	if cfg.SeedDemo {
+	// Populate sample data on first run only (persistent stores keep prior
+	// data). Disable with PERENCANAAN_SEED_DEMO=false.
+	if cfg.SeedDemo && freshStore {
 		svc.SeedDemoSystem()
 		log.Println("perencanaan: seeded sample data (set PERENCANAAN_SEED_DEMO=false to disable)")
 	}

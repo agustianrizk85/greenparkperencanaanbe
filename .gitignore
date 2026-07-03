@@ -6,3 +6,8 @@ perencanaan-server
 # Persisted master-data store (seeded at runtime)
 /data/
 *.tmp
+
+# compiled binaries
+*.exe
+*.exe~
+*.test

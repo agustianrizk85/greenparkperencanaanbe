@@ -11,11 +11,12 @@ type taskSpec struct {
 	weighted bool
 }
 
-// PIC usernames of the three design authors.
+// PIC usernames of the design authors.
 const (
 	PicRandi  = "randi"
 	PicAnanto = "ananto"
 	PicAgus   = "agus"
+	PicRio    = "rio"
 )
 
 // deliverableTemplate is the canonical "flow menambah proyek" tree. Every new
@@ -51,20 +52,20 @@ var deliverableTemplate = []taskSpec{
 	// Maingate (100%)
 	{"kawasan-maingate-desain", "Desain Kawasan", "Maingate", "Desain maingate", PicRandi, DivNone, true},
 	{"kawasan-maingate-render", "Desain Kawasan", "Maingate", "Render maingate", PicRandi, DivMarketing, true},
-	{"kawasan-maingate-gk", "Desain Kawasan", "Maingate", "Gambar kerja maingate", PicAgus, DivTeknik, true},
+	{"kawasan-maingate-gk", "Desain Kawasan", "Maingate", "Gambar kerja maingate", PicRio, DivTeknik, true},
 	// Fasos Fasum (100%)
 	{"kawasan-fasos-desain", "Desain Kawasan", "Fasos Fasum", "Desain fasos fasum", PicAnanto, DivNone, true},
 	{"kawasan-fasos-render", "Desain Kawasan", "Fasos Fasum", "Render fasos fasum", PicAnanto, DivMarketing, true},
-	{"kawasan-fasos-gk", "Desain Kawasan", "Fasos Fasum", "Gambar kerja fasos fasum", PicAgus, DivTeknik, true},
+	{"kawasan-fasos-gk", "Desain Kawasan", "Fasos Fasum", "Gambar kerja fasos fasum", PicRio, DivTeknik, true},
 	// Desain Infrastruktur (100%)
 	{"kawasan-infra-rencana", "Desain Kawasan", "Desain Infrastruktur", "Rencana infrastruktur", PicRandi, DivTeknik, true},
 	{"kawasan-infra-gk", "Desain Kawasan", "Desain Infrastruktur", "Gambar kerja infrastruktur", PicAgus, DivTeknik, true},
 	// Rencana Leveling
 	{"kawasan-leveling-rencana", "Desain Kawasan", "Rencana Leveling", "Rencana leveling", PicRandi, DivTeknik, false},
-	{"kawasan-leveling-gk", "Desain Kawasan", "Rencana Leveling", "Gambar kerja leveling", PicAgus, DivTeknik, false},
+	{"kawasan-leveling-gk", "Desain Kawasan", "Rencana Leveling", "Gambar kerja leveling", PicRio, DivTeknik, false},
 	// Desain Landscape
 	{"kawasan-landscape-taman", "Desain Kawasan", "Desain Landscape", "Desain taman", PicRandi, DivNone, false},
-	{"kawasan-landscape-gk", "Desain Kawasan", "Desain Landscape", "Gambar kerja taman", PicRandi, DivTeknik, false},
+	{"kawasan-landscape-gk", "Desain Kawasan", "Desain Landscape", "Gambar kerja taman", PicRio, DivTeknik, false},
 	// Animasi (100%)
 	{"kawasan-animasi", "Desain Kawasan", "Animasi", "Animasi kawasan", PicAnanto, DivMarketing, true},
 }
