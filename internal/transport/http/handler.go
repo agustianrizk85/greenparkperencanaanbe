@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 
+	"greenpark/perencanaan/internal/authmw"
 	"greenpark/perencanaan/internal/domain"
 	"greenpark/perencanaan/internal/service"
 )
@@ -12,6 +13,30 @@ import (
 type Handler struct {
 	svc *service.Service
 	hub *wsHub
+
+	// sso accepts the unified dashboard's Ed25519 login token directly (one login,
+	// no bridge). nil = SSO off. Set via SetSSO.
+	sso *authmw.Verifier
+}
+
+// SetSSO wires the master-auth SSO verifier so requests may authenticate with
+// the unified dashboard login token in addition to the native token.
+func (h *Handler) SetSSO(v *authmw.Verifier) { h.sso = v }
+
+// ssoUser verifies an SSO token and maps its claims to a perencanaan domain.User.
+func (h *Handler) ssoUser(tok string) (domain.User, bool) {
+	if h.sso == nil || tok == "" {
+		return domain.User{}, false
+	}
+	c, err := h.sso.Verify(tok)
+	if err != nil || !c.CanAccess("perencanaan") {
+		return domain.User{}, false
+	}
+	role := c.Role("perencanaan")
+	if role == "" || c.Super {
+		role = domain.RoleKadep
+	}
+	return domain.User{Username: c.Username, Name: c.Name, Role: role}, true
 }
 
 // NewHandler creates a Handler bound to the given service.
@@ -61,7 +86,10 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 
 // resolveUser is passed to the auth middleware.
 func (h *Handler) resolveUser(token string) (domain.User, bool) {
-	return h.svc.UserByToken(token)
+	if u, ok := h.svc.UserByToken(token); ok {
+		return u, true
+	}
+	return h.ssoUser(token) // fall back to the unified SSO login token
 }
 
 /* ---- Summary ----------------------------------------------------------- */

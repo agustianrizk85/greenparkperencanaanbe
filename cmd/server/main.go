@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"greenpark/perencanaan/internal/auth"
+	"greenpark/perencanaan/internal/authmw"
 	"greenpark/perencanaan/internal/config"
 	"greenpark/perencanaan/internal/repository"
 	"greenpark/perencanaan/internal/service"
@@ -44,6 +45,10 @@ func main() {
 	sessions := auth.NewSessionStore(12 * time.Hour)
 	svc := service.New(repo, sessions)
 	handler := httptransport.NewHandler(svc)
+	if v := authmw.New(authmw.Options{JWKSURL: os.Getenv("AUTH_JWKS_URL"), Issuer: os.Getenv("AUTH_ISSUER")}); v != nil {
+		handler.SetSSO(v)
+		log.Printf("perencanaan: SSO token acceptance enabled (jwks=%s)", os.Getenv("AUTH_JWKS_URL"))
+	}
 	router := httptransport.NewRouter(handler, cfg.AllowOrigin)
 
 	// Populate sample data on first run only (persistent stores keep prior
