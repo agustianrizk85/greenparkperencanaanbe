@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 
@@ -238,7 +239,13 @@ func (h *Handler) approveTask(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) rejectTask(w http.ResponseWriter, r *http.Request) {
 	user, _ := userFromContext(r.Context())
-	detail, err := h.svc.RejectTask(user, r.PathValue("id"), r.PathValue("taskId"))
+	// Body is optional: a plain "Tolak" (and the planning module) send none; a
+	// "Revisi" sends { "instruction": "…" }. Tolerate an empty/absent body.
+	var in reviseRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&in)
+	}
+	detail, err := h.svc.RejectTask(user, r.PathValue("id"), r.PathValue("taskId"), in.Instruction)
 	if err != nil {
 		writeServiceError(w, err)
 		return

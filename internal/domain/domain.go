@@ -17,6 +17,7 @@ type User struct {
 // Roles in the planning department.
 const (
 	RoleCEO     = "ceo"     // full overview, may do anything
+	RoleDirops  = "dirops"  // operational director (cross-division) — may approve & manage
 	RoleKadep   = "kadep"   // head of department, manages projects & assignments
 	RoleArsitek = "arsitek" // author of design + render deliverables (Randi, Ananto)
 	RoleDrafter = "drafter" // author of working drawings / gambar kerja (Agus, Rio)
@@ -87,6 +88,7 @@ type Task struct {
 	Doc        *TaskDoc   `json:"doc,omitempty"`        // review document, if uploaded
 	ApprovedBy string     `json:"approvedBy,omitempty"` // Kadep username (when approved)
 	ApprovedAt string     `json:"approvedAt,omitempty"` // RFC3339 (when approved)
+	RevisiNote string     `json:"revisiNote,omitempty"` // revision instruction when sent back (Revisi)
 }
 
 // Project is a development project carrying the full deliverable task list.

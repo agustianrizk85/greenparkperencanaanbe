@@ -67,7 +67,7 @@ func (s *Service) Logout(token string) { s.sessions.Revoke(token) }
 
 // canManage reports whether a role may add projects or edit any task.
 func canManage(role string) bool {
-	return role == domain.RoleCEO || role == domain.RoleKadep
+	return role == domain.RoleCEO || role == domain.RoleDirops || role == domain.RoleKadep
 }
 
 /* ---- Projects ---------------------------------------------------------- */
@@ -202,9 +202,10 @@ func (s *Service) ReassignTask(role, projectID, taskID string, in ReassignTaskIn
 // maxDocBytes caps an uploaded review PDF (10 MiB).
 const maxDocBytes = 10 << 20
 
-// canApprove reports whether a role may approve/reject a review (Kadep or CEO).
+// canApprove reports whether a role may approve/reject/revise a review
+// (Kadep, CEO, or the operational director Dirops).
 func canApprove(role string) bool {
-	return role == domain.RoleKadep || role == domain.RoleCEO
+	return role == domain.RoleKadep || role == domain.RoleCEO || role == domain.RoleDirops
 }
 
 // taskPIC finds the owning PIC of a task (and whether the task exists).
@@ -242,10 +243,12 @@ func (s *Service) UploadTaskDoc(actor domain.User, projectID, taskID, filename s
 	if !s.repo.SetTaskDoc(projectID, taskID, doc, data) {
 		return ProjectDetail{}, ErrNotFound
 	}
-	// Uploading a deliverable puts it up for review (and clears any prior approval).
+	// Uploading a deliverable puts it up for review (and clears any prior approval
+	// + revision instruction, since the re-upload is the response to it).
 	s.repo.MutateTask(projectID, taskID, func(t *domain.Task) {
 		t.Status = domain.StatusReview
 		t.ApprovedBy, t.ApprovedAt = "", ""
+		t.RevisiNote = ""
 		t.UpdatedAt = s.now().Format(time.RFC3339)
 	})
 	return s.Project(projectID)
@@ -276,6 +279,7 @@ func (s *Service) ApproveTask(actor domain.User, projectID, taskID string) (Proj
 		t.ApprovedBy = actor.Username
 		t.ApprovedAt = s.now().Format(time.RFC3339)
 		t.UpdatedAt = t.ApprovedAt
+		t.RevisiNote = "" // approval clears any prior revision instruction
 	})
 	if !ok {
 		return ProjectDetail{}, ErrNotFound
@@ -287,14 +291,16 @@ func (s *Service) ApproveTask(actor domain.User, projectID, taskID string) (Proj
 }
 
 // RejectTask sends a task's review back to Proses (revision needed). Only Kadep
-// / CEO.
-func (s *Service) RejectTask(actor domain.User, projectID, taskID string) (ProjectDetail, error) {
+// / CEO. `instruction` is an optional revision note recorded on the task so the
+// owning PIC sees what to fix (empty for a plain reject/"Tolak").
+func (s *Service) RejectTask(actor domain.User, projectID, taskID, instruction string) (ProjectDetail, error) {
 	if !canApprove(actor.Role) {
 		return ProjectDetail{}, ErrForbidden
 	}
 	ok := s.repo.MutateTask(projectID, taskID, func(t *domain.Task) {
 		t.Status = domain.StatusProgress
 		t.ApprovedBy, t.ApprovedAt = "", ""
+		t.RevisiNote = instruction
 		t.UpdatedAt = s.now().Format(time.RFC3339)
 	})
 	if !ok {
