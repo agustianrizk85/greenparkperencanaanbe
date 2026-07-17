@@ -103,6 +103,14 @@ func (p *Persistent) SetTaskDoc(projectID, taskID string, doc domain.TaskDoc, da
 	return ok
 }
 
+func (p *Persistent) SetWorkDrawingDoc(wdID, kind string, doc domain.GKDoc, data []byte) bool {
+	ok := p.Memory.SetWorkDrawingDoc(wdID, kind, doc, data)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
 func (p *Persistent) AddUser(u domain.User) bool {
 	ok := p.Memory.AddUser(u)
 	if ok {

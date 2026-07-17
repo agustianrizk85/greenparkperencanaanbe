@@ -27,12 +27,14 @@ type Service struct {
 	repo     repository.Store
 	sessions *auth.SessionStore
 	now      func() time.Time // injectable clock (defaults to time.Now)
+	gk       GKConfig
 }
 
 // New builds a Service from the store and session manager. repo may be the
 // in-memory store or the Postgres-backed one — both satisfy repository.Store.
-func New(repo repository.Store, sessions *auth.SessionStore) *Service {
-	return &Service{repo: repo, sessions: sessions, now: time.Now}
+// gk configures the optional Deep Revisi AI feature (zero value = disabled).
+func New(repo repository.Store, sessions *auth.SessionStore, gk GKConfig) *Service {
+	return &Service{repo: repo, sessions: sessions, now: time.Now, gk: gk}
 }
 
 // today returns the current date as YYYY-MM-DD.

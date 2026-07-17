@@ -133,6 +133,16 @@ type WorkDrawing struct {
 	Status         WorkDrawingStatus `json:"status"`
 	RevisiNote     string            `json:"revisiNote"` // last AI revision analysis, "" if none
 	Attachments    []WDAttachment    `json:"attachments,omitempty"` // files (e.g. imported from cicle)
+
+	// Deep Revisi AI — GK Kontraktor vs GK TTD vision check (Ollama). Bytes are
+	// stored separately in the repository, mirroring TaskDoc.
+	GKKontraktor *GKDoc            `json:"gkKontraktor,omitempty"`
+	GKTTD        *GKDoc            `json:"gkTTD,omitempty"`
+	GKAnnotated  *GKDoc            `json:"gkAnnotated,omitempty"`
+	GKStatus     GKCheckStatus     `json:"gkStatus,omitempty"` // "", idle, running, done, failed
+	GKFindings   []GKFinding       `json:"gkFindings,omitempty"`
+	GKError      string            `json:"gkError,omitempty"`
+	GKCheckedAt  string            `json:"gkCheckedAt,omitempty"` // RFC3339, last completed run
 }
 
 // WDAttachment is a file linked to a working drawing (name + download URL).
@@ -140,4 +150,33 @@ type WorkDrawing struct {
 type WDAttachment struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+}
+
+// GKCheckStatus is the async state of a Deep Revisi AI run.
+type GKCheckStatus string
+
+const (
+	GKIdle    GKCheckStatus = "idle"
+	GKRunning GKCheckStatus = "running"
+	GKDone    GKCheckStatus = "done"
+	GKFailed  GKCheckStatus = "failed"
+)
+
+// GKDoc is metadata of an uploaded/generated Gambar Kerja PDF (kontraktor, ttd,
+// or the annotated output). Bytes are stored separately in the repository.
+type GKDoc struct {
+	Name       string `json:"name"`
+	Size       int    `json:"size"`
+	UploadedBy string `json:"uploadedBy"`
+	UploadedAt string `json:"uploadedAt"` // RFC3339
+}
+
+// GKFinding is one inconsistency found by Deep Revisi AI on a given page of
+// GK Kontraktor, compared against the corresponding page of GK TTD.
+type GKFinding struct {
+	Page       int    `json:"page"`       // 1-based page number in GK Kontraktor
+	Wrong      string `json:"wrong"`      // value found in GK Kontraktor
+	Correct    string `json:"correct"`    // value found in GK TTD
+	Explain    string `json:"explain"`    // short explanation
+	Confidence string `json:"confidence"` // "tinggi" | "sedang" | "rendah"
 }

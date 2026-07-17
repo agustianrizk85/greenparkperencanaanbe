@@ -43,7 +43,20 @@ func main() {
 		log.Println("perencanaan: using in-memory store")
 	}
 	sessions := auth.NewSessionStore(12 * time.Hour)
-	svc := service.New(repo, sessions)
+	gkCfg := service.GKConfig{
+		OllamaAPIKey:   cfg.OllamaAPIKey,
+		OllamaModel:    cfg.OllamaModel,
+		OllamaEndpoint: cfg.OllamaEndpoint,
+		PythonBin:      cfg.PythonBin,
+		ScriptsDir:     cfg.GKScriptsDir,
+		SkillPath:      cfg.GKSkillPath,
+	}
+	if gkCfg.Configured() {
+		log.Printf("perencanaan: Deep Revisi AI enabled (model=%s)", gkCfg.OllamaModel)
+	} else {
+		log.Println("perencanaan: Deep Revisi AI disabled (set OLLAMA_API_KEY to enable)")
+	}
+	svc := service.New(repo, sessions, gkCfg)
 	handler := httptransport.NewHandler(svc)
 	if v := authmw.New(authmw.Options{JWKSURL: os.Getenv("AUTH_JWKS_URL"), Issuer: os.Getenv("AUTH_ISSUER")}); v != nil {
 		handler.SetSSO(v)

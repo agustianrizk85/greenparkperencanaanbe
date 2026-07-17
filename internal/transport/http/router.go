@@ -52,6 +52,12 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	authed.HandleFunc("POST /api/workdrawings/{id}/revisi", h.reviseWorkDrawing)
 	authed.HandleFunc("GET /api/alerts", h.alerts)
 
+	// Deep Revisi AI: GK Kontraktor vs GK TTD vision check (Ollama Cloud).
+	authed.HandleFunc("POST /api/workdrawings/{id}/gk/{kind}", h.uploadGKDoc)
+	authed.HandleFunc("GET /api/workdrawings/{id}/gk/{kind}", h.getGKDoc)
+	authed.HandleFunc("POST /api/workdrawings/{id}/deep-revisi", h.startDeepRevisi)
+	authed.HandleFunc("GET /api/workdrawings/{id}/deep-revisi", h.deepRevisiStatus)
+
 	// Department roster / staff workload.
 	authed.HandleFunc("GET /api/staff", h.staff)
 

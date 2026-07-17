@@ -35,6 +35,10 @@ type Store interface {
 	AddWorkDrawing(d domain.WorkDrawing) domain.WorkDrawing
 	MutateWorkDrawing(id string, fn func(*domain.WorkDrawing)) (domain.WorkDrawing, bool)
 
+	// Deep Revisi AI documents (GK Kontraktor / GK TTD / annotated output).
+	SetWorkDrawingDoc(wdID, kind string, doc domain.GKDoc, data []byte) bool
+	WorkDrawingDocBytes(wdID, kind string) ([]byte, string, bool)
+
 	// Admin resets.
 	ResetProses()
 	ResetMaster()

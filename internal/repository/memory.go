@@ -110,6 +110,64 @@ func (m *Memory) ResetMaster() {
 // docKey is the map key for a task's review document bytes.
 func docKey(projectID, taskID string) string { return projectID + "/" + taskID }
 
+// gkDocKey is the map key for a work-drawing's Deep Revisi AI document bytes
+// (kind = "kontraktor" | "ttd" | "annotated"). Shares the same m.docs map as
+// task review PDFs (distinct "wd/" prefix avoids any collision), so it is
+// cleared by ResetProses/ResetMaster and round-trips through SnapshotJSON for
+// free, same as task docs.
+func gkDocKey(wdID, kind string) string { return "wd/" + wdID + "/" + kind }
+
+// SetWorkDrawingDoc stores a Deep Revisi AI PDF (kontraktor/ttd/annotated) for
+// a work drawing and records its metadata on the drawing itself.
+func (m *Memory) SetWorkDrawingDoc(wdID, kind string, doc domain.GKDoc, data []byte) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.drawings[wdID]
+	if !ok {
+		return false
+	}
+	stored := doc
+	switch kind {
+	case "kontraktor":
+		d.GKKontraktor = &stored
+	case "ttd":
+		d.GKTTD = &stored
+	case "annotated":
+		d.GKAnnotated = &stored
+	default:
+		return false
+	}
+	m.docs[gkDocKey(wdID, kind)] = data
+	return true
+}
+
+// WorkDrawingDocBytes returns the stored bytes and filename for a work
+// drawing's Deep Revisi AI document (kind = "kontraktor"|"ttd"|"annotated").
+func (m *Memory) WorkDrawingDocBytes(wdID, kind string) ([]byte, string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	data, ok := m.docs[gkDocKey(wdID, kind)]
+	if !ok {
+		return nil, "", false
+	}
+	name := wdID
+	if d, ok := m.drawings[wdID]; ok {
+		var doc *domain.GKDoc
+		switch kind {
+		case "kontraktor":
+			doc = d.GKKontraktor
+		case "ttd":
+			doc = d.GKTTD
+		case "annotated":
+			doc = d.GKAnnotated
+		}
+		if doc != nil {
+			name = doc.Name
+		}
+	}
+	return data, name, true
+}
+
 // MutateTask applies fn to a task in place under the lock. Returns whether the
 // task was found. Used for status, approval and rejection transitions.
 func (m *Memory) MutateTask(projectID, taskID string, fn func(*domain.Task)) bool {

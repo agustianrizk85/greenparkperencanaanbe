@@ -325,6 +325,63 @@ func (h *Handler) alerts(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, h.svc.Alerts())
 }
 
+/* ---- Deep Revisi AI (GK Kontraktor vs GK TTD vision check) ------------- */
+
+func (h *Handler) uploadGKDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	kind := r.PathValue("kind")
+	if err := r.ParseMultipartForm(22 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid upload")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "cannot read file")
+		return
+	}
+	v, err := h.svc.UploadGKDoc(user, r.PathValue("id"), kind, header.Filename, data)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Handler) getGKDoc(w http.ResponseWriter, r *http.Request) {
+	data, name, err := h.svc.GKDocBytes(r.PathValue("id"), r.PathValue("kind"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "inline; filename=\""+name+"\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func (h *Handler) startDeepRevisi(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.StartDeepRevisi(r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "running"})
+}
+
+func (h *Handler) deepRevisiStatus(w http.ResponseWriter, r *http.Request) {
+	v, err := h.svc.GKStatus(r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
 /* ---- Staff / team ------------------------------------------------------ */
 
 func (h *Handler) staff(w http.ResponseWriter, _ *http.Request) {
