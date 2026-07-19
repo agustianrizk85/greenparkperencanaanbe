@@ -25,37 +25,34 @@ import (
 func main() {
 	cfg := config.Load()
 
-	// Dependency wiring (composition root). Storage backend is env-driven:
-	// PostgreSQL when PERENCANAAN_DATABASE_URL is set, otherwise in-memory.
-	var repo repository.Store
-	freshStore := true // in-memory always starts empty
-	if dsn := os.Getenv("PERENCANAAN_DATABASE_URL"); dsn != "" {
-		pg, err := repository.NewPersistent(dsn)
-		if err != nil {
-			log.Fatalf("perencanaan: postgres: %v", err)
-		}
-		defer func() { _ = pg.Close() }()
-		repo = pg
-		freshStore = pg.Fresh()
-		log.Println("perencanaan: using PostgreSQL store")
-	} else {
-		repo = repository.NewMemory()
-		log.Println("perencanaan: using in-memory store")
+	// Dependency wiring (composition root). Storage is ALWAYS PostgreSQL — there
+	// is no in-memory fallback, so data is persistent. PERENCANAAN_DATABASE_URL
+	// overrides the default (the shared greenpark DB); a connection failure is
+	// fatal rather than silently degrading to a volatile store.
+	dsn := os.Getenv("PERENCANAAN_DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://postgres:postgres@127.0.0.1:5434/greenpark?sslmode=disable"
 	}
+	// PERENCANAAN_SEED_MASTER=false starts an empty portfolio on a fresh DB (no
+	// example projects / seed accounts) — real projects + the SSO-synced roster only.
+	seedMaster := os.Getenv("PERENCANAAN_SEED_MASTER") != "false"
+	pg, err := repository.NewPersistent(dsn, seedMaster)
+	if err != nil {
+		log.Fatalf("perencanaan: PostgreSQL required (no in-memory fallback): %v", err)
+	}
+	defer func() { _ = pg.Close() }()
+	var repo repository.Store = pg
+	freshStore := pg.Fresh()
+	log.Println("perencanaan: using PostgreSQL store")
 	sessions := auth.NewSessionStore(12 * time.Hour)
 	gkCfg := service.GKConfig{
-		OllamaAPIKey:   cfg.OllamaAPIKey,
-		OllamaModel:    cfg.OllamaModel,
-		OllamaEndpoint: cfg.OllamaEndpoint,
-		PythonBin:      cfg.PythonBin,
-		ScriptsDir:     cfg.GKScriptsDir,
-		SkillPath:      cfg.GKSkillPath,
+		OllamaModel: cfg.OllamaModel,
+		PythonBin:   cfg.PythonBin,
+		ScriptsDir:  cfg.GKScriptsDir,
+		SkillPath:   cfg.GKSkillPath,
+		AuthAPIBase: cfg.AuthAPIBase,
 	}
-	if gkCfg.Configured() {
-		log.Printf("perencanaan: Deep Revisi AI enabled (model=%s)", gkCfg.OllamaModel)
-	} else {
-		log.Println("perencanaan: Deep Revisi AI disabled (set OLLAMA_API_KEY to enable)")
-	}
+	log.Printf("perencanaan: Deep Revisi AI — vision model %s via auth %s (central key)", gkCfg.OllamaModel, gkCfg.AuthAPIBase)
 	svc := service.New(repo, sessions, gkCfg)
 	handler := httptransport.NewHandler(svc)
 	if v := authmw.New(authmw.Options{JWKSURL: os.Getenv("AUTH_JWKS_URL"), Issuer: os.Getenv("AUTH_ISSUER")}); v != nil {

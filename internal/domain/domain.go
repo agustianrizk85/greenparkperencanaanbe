@@ -23,15 +23,77 @@ const (
 	RoleDrafter = "drafter" // author of working drawings / gambar kerja (Agus, Rio)
 )
 
+// Department is a division in the central catalogue (synced from auth SSO). A
+// finished deliverable's Output routes to one of these by Code.
+type Department struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+// GP is a grup/cluster master (GP1, GP2, …) — a Project belongs to one GP.
+type GP struct {
+	ID   string `json:"id"`
+	Code string `json:"code"` // GP1
+	Name string `json:"name"` // brand / cluster name (optional)
+}
+
+// BuildingType is a reusable house-type master (Garnet, Ruby, …) with its
+// standard building + land area, referenced by kavling.
+type BuildingType struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`         // Garnet
+	LuasBangunan int    `json:"luasBangunan"` // 42
+	LuasTanah    int    `json:"luasTanah"`    // 32
+}
+
+// Lebar is a kavling-frontage category master (L3.5, L4, L5) — a controlled
+// vocabulary so kavling pick a value instead of free-typing.
+type Lebar struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Lokasi is a location master (Leuwinanggung, Curug, …) reused across projects.
+type Lokasi struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Blok is a phase/cluster grouping WITHIN a project (A, B, "Verci 3 Ekstensi").
+type Blok struct {
+	ID        string `json:"id"`
+	ProjectID string `json:"projectId"`
+	Name      string `json:"name"`
+}
+
+// Kavling is one unit/plot in a project: it sits in a Blok and is built to a
+// BuildingType, with its actual plot size + frontage.
+type Kavling struct {
+	ID           string `json:"id"`
+	ProjectID    string `json:"projectId"`
+	BlokID       string `json:"blokId"`       // → Blok ("" = unassigned)
+	NoKav        string `json:"noKav"`        // A1
+	TypeID       string `json:"typeId"`       // → BuildingType ("" = unset)
+	LuasBangunan int    `json:"luasBangunan"` // actual (usually = type's)
+	LuasKavling  int    `json:"luasKavling"`  // actual land plot
+	LebarKavling string `json:"lebarKavling"` // L4, L3.5
+}
+
 // Division is a downstream consumer that a finished deliverable is routed to.
+// It holds a department Code (dynamic, from the central catalogue); the Div*
+// constants below are legacy defaults kept for compatibility.
 type Division string
 
 const (
+	// Default template outputs — values are the CENTRAL department codes (from
+	// auth SSO) so a freshly-created project's deliverables route to real
+	// departments. Legacy "legal"/"konsumen" values (pre-dynamic-divisions) are
+	// still accepted on existing tasks; validDivision no longer blocks them.
 	DivNone      Division = ""
-	DivLegal     Division = "legal"
+	DivLegal     Division = "legalpermit"
 	DivMarketing Division = "marketing"
 	DivTeknik    Division = "teknik"
-	DivKonsumen  Division = "konsumen"
+	DivKonsumen  Division = "cso"
 	DivCEO       Division = "ceo"
 )
 
@@ -89,6 +151,18 @@ type Task struct {
 	ApprovedBy string     `json:"approvedBy,omitempty"` // Kadep username (when approved)
 	ApprovedAt string     `json:"approvedAt,omitempty"` // RFC3339 (when approved)
 	RevisiNote string     `json:"revisiNote,omitempty"` // revision instruction when sent back (Revisi)
+
+	// Deep Analisis AI — single-document vision QC of the review PDF (Doc) against
+	// the selected checklist skill(s), producing an annotated result PDF. State is
+	// ephemeral, mirroring the WorkDrawing GK block.
+	AIStatus    GKCheckStatus `json:"aiStatus,omitempty"`  // "", running, done, failed
+	AIDone      int           `json:"aiDone,omitempty"`    // pages analysed so far (progress)
+	AITotal     int           `json:"aiTotal,omitempty"`   // total pages to analyse
+	AIFindings  []GKFinding   `json:"aiFindings,omitempty"`
+	AISkills    []string      `json:"aiSkills,omitempty"`    // skill names applied this run
+	AIAnnotated *TaskDoc      `json:"aiAnnotated,omitempty"` // annotated result PDF (bytes stored in repo)
+	AIError     string        `json:"aiError,omitempty"`
+	AICheckedAt string        `json:"aiCheckedAt,omitempty"` // RFC3339, last completed run
 }
 
 // Project is a development project carrying the full deliverable task list.
@@ -140,6 +214,8 @@ type WorkDrawing struct {
 	GKTTD        *GKDoc            `json:"gkTTD,omitempty"`
 	GKAnnotated  *GKDoc            `json:"gkAnnotated,omitempty"`
 	GKStatus     GKCheckStatus     `json:"gkStatus,omitempty"` // "", idle, running, done, failed
+	GKDone       int               `json:"gkDone,omitempty"`   // pages analysed so far (progress)
+	GKTotal      int               `json:"gkTotal,omitempty"`  // total pages to analyse
 	GKFindings   []GKFinding       `json:"gkFindings,omitempty"`
 	GKError      string            `json:"gkError,omitempty"`
 	GKCheckedAt  string            `json:"gkCheckedAt,omitempty"` // RFC3339, last completed run

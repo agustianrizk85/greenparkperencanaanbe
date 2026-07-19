@@ -14,7 +14,35 @@ type Store interface {
 	UserByUsername(username string) (domain.User, bool)
 	Users() []domain.User
 	AddUser(u domain.User) bool
+	UpsertUser(u domain.User) bool
 	DeleteUser(username string) bool
+
+	// Department catalogue (synced from auth SSO) — drives the "output to
+	// division" options + aggregation.
+	Departments() []domain.Department
+	SetDepartments(depts []domain.Department)
+
+	// GP + building-type masters (Fase 1 of the relational project model).
+	GPs() []domain.GP
+	SaveGP(gp domain.GP) domain.GP
+	DeleteGP(id string) bool
+	BuildingTypes() []domain.BuildingType
+	SaveBuildingType(t domain.BuildingType) domain.BuildingType
+	DeleteBuildingType(id string) bool
+	Lebars() []domain.Lebar
+	SaveLebar(l domain.Lebar) domain.Lebar
+	DeleteLebar(id string) bool
+	Lokasis() []domain.Lokasi
+	SaveLokasi(l domain.Lokasi) domain.Lokasi
+	DeleteLokasi(id string) bool
+
+	// Blok + kavling (Fase 2) — per-project.
+	BloksByProject(projectID string) []domain.Blok
+	SaveBlok(b domain.Blok) domain.Blok
+	DeleteBlok(id string) bool
+	KavlingByProject(projectID string) []domain.Kavling
+	SaveKavling(k domain.Kavling) domain.Kavling
+	DeleteKavling(id string) bool
 
 	// Projects & tasks.
 	Projects() []domain.Project
@@ -29,6 +57,9 @@ type Store interface {
 	// Review documents.
 	SetTaskDoc(projectID, taskID string, doc domain.TaskDoc, data []byte) bool
 	TaskDocBytes(projectID, taskID string) ([]byte, string, bool)
+	// Deep Analisis AI annotated result PDF (separate from the review Doc).
+	SetTaskAIAnnotated(projectID, taskID, name string, data []byte) bool
+	TaskAIAnnotatedBytes(projectID, taskID string) ([]byte, string, bool)
 
 	// Working drawings (gambar kerja).
 	WorkDrawings() []domain.WorkDrawing

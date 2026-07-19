@@ -26,9 +26,9 @@ type Persistent struct {
 func (p *Persistent) Fresh() bool { return p.fresh }
 
 // NewPersistent connects to Postgres, ensures the state table, and restores the
-// saved snapshot. On an empty database it keeps the freshly seeded portfolio and
-// writes the initial snapshot.
-func NewPersistent(dsn string) (*Persistent, error) {
+// saved snapshot. On an empty database it writes the initial snapshot — seeded
+// with the built-in example data when seedMaster is true, otherwise empty.
+func NewPersistent(dsn string, seedMaster bool) (*Persistent, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open: %w", err)
@@ -47,7 +47,7 @@ func NewPersistent(dsn string) (*Persistent, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
-	p := &Persistent{Memory: NewMemory(), db: db}
+	p := &Persistent{Memory: newMemory(seedMaster), db: db}
 
 	var data []byte
 	switch err := db.QueryRow(`SELECT data FROM perencanaan_state WHERE id = 1`).Scan(&data); err {
@@ -97,6 +97,108 @@ func (p *Persistent) MutateTask(projectID, taskID string, fn func(*domain.Task))
 
 func (p *Persistent) SetTaskDoc(projectID, taskID string, doc domain.TaskDoc, data []byte) bool {
 	ok := p.Memory.SetTaskDoc(projectID, taskID, doc, data)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) UpsertUser(u domain.User) bool {
+	ok := p.Memory.UpsertUser(u)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) SetDepartments(depts []domain.Department) {
+	p.Memory.SetDepartments(depts)
+	_ = p.save()
+}
+
+func (p *Persistent) SaveGP(gp domain.GP) domain.GP {
+	out := p.Memory.SaveGP(gp)
+	_ = p.save()
+	return out
+}
+
+func (p *Persistent) DeleteGP(id string) bool {
+	ok := p.Memory.DeleteGP(id)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) SaveBuildingType(t domain.BuildingType) domain.BuildingType {
+	out := p.Memory.SaveBuildingType(t)
+	_ = p.save()
+	return out
+}
+
+func (p *Persistent) DeleteBuildingType(id string) bool {
+	ok := p.Memory.DeleteBuildingType(id)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) SaveLebar(l domain.Lebar) domain.Lebar {
+	out := p.Memory.SaveLebar(l)
+	_ = p.save()
+	return out
+}
+func (p *Persistent) DeleteLebar(id string) bool {
+	ok := p.Memory.DeleteLebar(id)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+func (p *Persistent) SaveLokasi(l domain.Lokasi) domain.Lokasi {
+	out := p.Memory.SaveLokasi(l)
+	_ = p.save()
+	return out
+}
+func (p *Persistent) DeleteLokasi(id string) bool {
+	ok := p.Memory.DeleteLokasi(id)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) SaveBlok(b domain.Blok) domain.Blok {
+	out := p.Memory.SaveBlok(b)
+	_ = p.save()
+	return out
+}
+
+func (p *Persistent) DeleteBlok(id string) bool {
+	ok := p.Memory.DeleteBlok(id)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) SaveKavling(k domain.Kavling) domain.Kavling {
+	out := p.Memory.SaveKavling(k)
+	_ = p.save()
+	return out
+}
+
+func (p *Persistent) DeleteKavling(id string) bool {
+	ok := p.Memory.DeleteKavling(id)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
+func (p *Persistent) SetTaskAIAnnotated(projectID, taskID, name string, data []byte) bool {
+	ok := p.Memory.SetTaskAIAnnotated(projectID, taskID, name, data)
 	if ok {
 		_ = p.save()
 	}

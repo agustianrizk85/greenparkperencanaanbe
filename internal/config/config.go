@@ -13,16 +13,15 @@ type Config struct {
 	AllowOrigin string // CORS allowed origin
 	SeedDemo    bool   // populate sample data on startup
 
-	// Deep Revisi AI (GK Kontraktor vs GK TTD vision check via Ollama Cloud).
-	// Self-contained here — deliberately NOT routed through the shared
-	// be/auth AI proxy (see plan notes: that service's working tree is
-	// currently broken and unrelated to this feature).
-	OllamaAPIKey    string // Ollama Cloud API key; feature no-ops without it
-	OllamaModel     string // vision-capable model id
-	OllamaEndpoint  string // chat completions URL
-	PythonBin       string // interpreter used to shell out to scripts/gk/*.py
-	GKScriptsDir    string // folder holding render_pages.py / annotate.py
-	GKSkillPath     string // dashboard/skillmd/pengecekan-gambar-kerja.md, hot-editable
+	// Deep Revisi AI (GK Kontraktor vs GK TTD vision check). The Ollama KEY is
+	// NOT held here — vision calls are proxied through the auth service, which
+	// owns the ONE central key (Panel Admin → Kunci AI). Perencanaan only picks
+	// the vision MODEL and shells out to the Python render/annotate scripts.
+	OllamaModel  string // default vision model id (overridable at runtime from UI)
+	PythonBin    string // interpreter used to shell out to scripts/gk/*.py
+	GKScriptsDir string // folder holding render_pages.py / annotate.py
+	GKSkillPath  string // dashboard/skillmd/pengecekan-gambar-kerja.md, hot-editable
+	AuthAPIBase  string // auth service base URL (…/api) for the vision proxy
 }
 
 // Load reads configuration from the environment, applying defaults.
@@ -32,12 +31,11 @@ func Load() Config {
 		AllowOrigin: getenv("PERENCANAAN_ALLOW_ORIGIN", "*"),
 		SeedDemo:    getenv("PERENCANAAN_SEED_DEMO", "true") != "false",
 
-		OllamaAPIKey:   getenv("OLLAMA_API_KEY", ""),
-		OllamaModel:    getenv("OLLAMA_VISION_MODEL", "qwen3.5:397b"),
-		OllamaEndpoint: getenv("OLLAMA_ENDPOINT", "https://ollama.com/v1/chat/completions"),
-		PythonBin:      getenv("PYTHON_BIN", defaultPythonBin()),
-		GKScriptsDir:   getenv("GK_SCRIPTS_DIR", "scripts/gk"),
-		GKSkillPath:    getenv("GK_SKILL_PATH", "../../dashboard/skillmd/pengecekan-gambar-kerja.md"),
+		OllamaModel:  getenv("OLLAMA_VISION_MODEL", "qwen3.5:397b"),
+		PythonBin:    getenv("PYTHON_BIN", defaultPythonBin()),
+		GKScriptsDir: getenv("GK_SCRIPTS_DIR", "scripts/gk"),
+		GKSkillPath:  getenv("GK_SKILL_PATH", "../../dashboard/skillmd/pengecekan-gambar-kerja.md"),
+		AuthAPIBase:  getenv("AUTH_API_BASE", "http://127.0.0.1:8090/api"),
 	}
 }
 

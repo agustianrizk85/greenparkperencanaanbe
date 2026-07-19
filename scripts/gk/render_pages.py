@@ -39,14 +39,22 @@ def render(src_path, outdir, prefix):
     return doc.page_count, images
 
 
+def render_or_skip(path, outdir, prefix):
+    """Render a PDF, or return an empty side when path is "-" / empty (single-doc
+    mode, where only one of Kontraktor / TTD was uploaded)."""
+    if not path or path == "-":
+        return 0, []
+    return render(path, outdir, prefix)
+
+
 def main():
     if len(sys.argv) != 4:
-        print("Usage: render_pages.py <kontraktor.pdf> <ttd.pdf> <outdir>", file=sys.stderr)
+        print("Usage: render_pages.py <kontraktor.pdf|-> <ttd.pdf|-> <outdir>", file=sys.stderr)
         sys.exit(2)
     kontraktor_path, ttd_path, outdir = sys.argv[1], sys.argv[2], sys.argv[3]
     try:
-        k_pages, k_images = render(kontraktor_path, outdir, "k")
-        t_pages, t_images = render(ttd_path, outdir, "t")
+        k_pages, k_images = render_or_skip(kontraktor_path, outdir, "k")
+        t_pages, t_images = render_or_skip(ttd_path, outdir, "t")
     except Exception as e:
         print(f"Gagal render PDF: {e}", file=sys.stderr)
         sys.exit(1)

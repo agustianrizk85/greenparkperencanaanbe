@@ -45,7 +45,14 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrNotFound):
 		writeError(w, http.StatusNotFound, "resource not found")
 	case errors.Is(err, service.ErrValidation):
-		writeError(w, http.StatusBadRequest, "validation failed: required field is missing")
+		// Surface the service's specific reason when it wrapped one
+		// (fmt.Errorf("%w: …", ErrValidation)); fall back to a generic message
+		// only for a bare sentinel so callers still get something readable.
+		msg := err.Error()
+		if msg == service.ErrValidation.Error() {
+			msg = "validation failed: required field is missing"
+		}
+		writeError(w, http.StatusBadRequest, msg)
 	case errors.Is(err, service.ErrInvalidCredentials):
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 	case errors.Is(err, service.ErrForbidden):

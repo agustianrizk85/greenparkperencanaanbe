@@ -22,65 +22,70 @@ type DivisionOutputs struct {
 	Items    []OutputItem    `json:"items"`
 }
 
-// divisionLabels gives the display name and output order of each division.
-var divisionOrder = []struct {
-	div   domain.Division
-	label string
-}{
-	{domain.DivLegal, "Legal"},
-	{domain.DivMarketing, "Marketing"},
-	{domain.DivTeknik, "Teknik"},
-	{domain.DivKonsumen, "Konsumen"},
-	{domain.DivCEO, "CEO"},
-}
+// wdConsumerDept / wdContractorDept are the department codes the working-drawing
+// flow feeds into when those departments exist in the central catalogue.
+const (
+	wdConsumerDept   = "cso"    // gambar kerja konsumen
+	wdContractorDept = "teknik" // gambar kerja kontraktor
+)
 
-// OutputsByDivision routes every deliverable to the division that consumes it
-// (the "output" section of the business process). The CEO bucket mirrors the
-// whole portfolio. Konsumen and the contractor side of Teknik are fed by the
-// per-consumer working-drawing flow.
+// OutputsByDivision routes every deliverable to the DEPARTMENT that consumes it
+// (the "output" section of the business process), over the dynamic department
+// catalogue synced from auth SSO. A task feeds the department named in its
+// Output; the per-consumer working-drawing flow feeds the consumer + contractor
+// departments when present.
 func (s *Service) OutputsByDivision() []DivisionOutputs {
 	projects := s.repo.Projects()
-	buckets := map[domain.Division][]OutputItem{}
+	depts := s.repo.Departments()
 
+	known := make(map[domain.Division]bool, len(depts))
+	for _, d := range depts {
+		known[domain.Division(d.Code)] = true
+	}
+
+	buckets := map[domain.Division][]OutputItem{}
 	add := func(div domain.Division, it OutputItem) {
-		buckets[div] = append(buckets[div], it)
+		if known[div] { // ignore outputs to unknown/removed departments
+			buckets[div] = append(buckets[div], it)
+		}
 	}
 
 	for _, p := range projects {
 		for _, t := range p.Tasks {
-			it := OutputItem{
+			if t.Output == domain.DivNone {
+				continue
+			}
+			add(t.Output, OutputItem{
 				ProjectID: p.ID, ProjectName: p.Name, GP: p.GP,
 				Deliverable: t.Name, PIC: t.PIC, Status: t.Status,
 				Ready: t.Status == domain.StatusDone,
-			}
-			// CEO sees the entire deliverable tree.
-			add(domain.DivCEO, it)
-			if t.Output != domain.DivNone {
-				add(t.Output, it)
-			}
+			})
 		}
 	}
 
-	// Fold the per-consumer working-drawing flow into Konsumen + Teknik.
+	// Fold the per-consumer working-drawing flow into the consumer + contractor
+	// departments (only if those exist in the catalogue).
 	for _, d := range s.repo.WorkDrawings() {
 		pname := projectName(projects, d.ProjectID)
-		// Consumer working drawing -> Konsumen.
-		add(domain.DivKonsumen, OutputItem{
+		add(domain.Division(wdConsumerDept), OutputItem{
 			ProjectID: d.ProjectID, ProjectName: pname, GP: gpFor(projects, d.ProjectID),
 			Deliverable: "Gambar kerja konsumen — " + d.Konsumen + " (" + d.Unit + ")",
 			PIC:         d.PIC, Status: statusForWD(d, false), Ready: d.KonsumenDone != "",
 		})
-		// Contractor working drawing -> Teknik.
-		add(domain.DivTeknik, OutputItem{
+		add(domain.Division(wdContractorDept), OutputItem{
 			ProjectID: d.ProjectID, ProjectName: pname, GP: gpFor(projects, d.ProjectID),
 			Deliverable: "Gambar kerja kontraktor — " + d.Konsumen + " (" + d.Unit + ")",
 			PIC:         d.PIC, Status: statusForWD(d, true), Ready: d.KontraktorDone != "",
 		})
 	}
 
-	out := make([]DivisionOutputs, 0, len(divisionOrder))
-	for _, d := range divisionOrder {
-		items := buckets[d.div]
+	out := make([]DivisionOutputs, 0, len(depts))
+	for _, d := range depts {
+		div := domain.Division(d.Code)
+		items := buckets[div]
+		if items == nil {
+			items = []OutputItem{} // serialise empty as [] (not null) for the frontend
+		}
 		ready := 0
 		for _, it := range items {
 			if it.Ready {
@@ -88,7 +93,7 @@ func (s *Service) OutputsByDivision() []DivisionOutputs {
 			}
 		}
 		out = append(out, DivisionOutputs{
-			Division: d.div, Label: d.label, Items: items, Ready: ready, Total: len(items),
+			Division: div, Label: d.Name, Items: items, Ready: ready, Total: len(items),
 		})
 	}
 	return out

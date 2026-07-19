@@ -30,8 +30,10 @@ var roleLabels = map[string]string{
 }
 
 // Staff returns the department roster with per-author workload statistics,
-// backing the "Tim / Staff" view.
-func (s *Service) Staff() []StaffMember {
+// backing the "Tim / Staff" view. It first syncs the roster from the central
+// auth SSO (best-effort) so the PIC list stays current app-wide.
+func (s *Service) Staff(token string) []StaffMember {
+	s.syncFromAuth(token)
 	// Aggregate task load per PIC across the portfolio.
 	total := map[string]int{}
 	done := map[string]int{}

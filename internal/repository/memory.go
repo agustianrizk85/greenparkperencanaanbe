@@ -33,10 +33,23 @@ type masterProject struct {
 
 // Memory is the in-memory store.
 type Memory struct {
-	mu         sync.RWMutex
-	users      map[string]domain.User
-	projects   map[string]*domain.Project // keyed by project ID
-	drawings   map[string]*domain.WorkDrawing
+	mu          sync.RWMutex
+	users       map[string]domain.User
+	departments []domain.Department       // central catalogue, synced from auth SSO
+	gps         []domain.GP               // grup master
+	types       []domain.BuildingType     // tipe bangunan master
+	lebars      []domain.Lebar            // lebar kavling master
+	lokasis     []domain.Lokasi           // lokasi master
+	bloks       []domain.Blok             // per-project phase/cluster master
+	kavling     []domain.Kavling          // per-project units
+	seqGP       int                       // id counter for GPs
+	seqType     int                       // id counter for building types
+	seqLebar    int
+	seqLokasi   int
+	seqBlok     int // id counter for bloks
+	seqKav      int // id counter for kavling
+	projects    map[string]*domain.Project // keyed by project ID
+	drawings    map[string]*domain.WorkDrawing
 	docs       map[string][]byte  // review PDF bytes, keyed by projectID + "/" + taskID
 	cicleBoard json.RawMessage    // raw mirror of the cicle Kanban board (columns+cards)
 	nextNo     int // next project number for additions
@@ -60,14 +73,24 @@ func (m *Memory) SetCicleBoard(data json.RawMessage) {
 
 // NewMemory builds the store, seeding users and the project portfolio (each
 // expanded into the deliverable task tree).
-func NewMemory() *Memory {
+// NewMemory builds a store seeded with the built-in master data (example
+// projects + department accounts). Kept for callers/tests that want the demo.
+func NewMemory() *Memory { return newMemory(true) }
+
+// newMemory builds the store, optionally seeding the built-in master data. With
+// seedMaster=false it starts EMPTY (no example projects, no seed accounts) so the
+// deployment holds only real projects + the SSO-synced roster.
+func newMemory(seedMaster bool) *Memory {
 	m := &Memory{
-		users:    seedUsers(),
+		users:    map[string]domain.User{},
 		projects: map[string]*domain.Project{},
 		drawings: map[string]*domain.WorkDrawing{},
 		docs:     map[string][]byte{},
 	}
-	m.seedProjects()
+	if seedMaster {
+		m.users = seedUsers()
+		m.seedProjects()
+	}
 	return m
 }
 
@@ -205,6 +228,44 @@ func (m *Memory) SetTaskDoc(projectID, taskID string, doc domain.TaskDoc, data [
 	return false
 }
 
+// SetTaskAIAnnotated stores the Deep Analisis annotated result PDF for a task
+// (separate key from the review Doc) and records its metadata on the task.
+func (m *Memory) SetTaskAIAnnotated(projectID, taskID, name string, data []byte) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.projects[projectID]
+	if !ok {
+		return false
+	}
+	for i := range p.Tasks {
+		if p.Tasks[i].ID == taskID {
+			m.docs[docKey(projectID, taskID)+"/annotated"] = data
+			p.Tasks[i].AIAnnotated = &domain.TaskDoc{Name: name, Size: len(data), UploadedBy: "deep-analisis-ai"}
+			return true
+		}
+	}
+	return false
+}
+
+// TaskAIAnnotatedBytes returns the annotated result PDF bytes + filename.
+func (m *Memory) TaskAIAnnotatedBytes(projectID, taskID string) ([]byte, string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	data, ok := m.docs[docKey(projectID, taskID)+"/annotated"]
+	if !ok {
+		return nil, "", false
+	}
+	name := "hasil-" + taskID + ".pdf"
+	if p, ok := m.projects[projectID]; ok {
+		for _, t := range p.Tasks {
+			if t.ID == taskID && t.AIAnnotated != nil {
+				name = t.AIAnnotated.Name
+			}
+		}
+	}
+	return data, name, true
+}
+
 // TaskDocBytes returns the stored PDF bytes and filename for a task.
 func (m *Memory) TaskDocBytes(projectID, taskID string) ([]byte, string, bool) {
 	m.mu.RLock()
@@ -298,6 +359,298 @@ func (m *Memory) AddUser(u domain.User) bool {
 	defer m.mu.Unlock()
 	if _, exists := m.users[u.Username]; exists {
 		return false
+	}
+	m.users[u.Username] = u
+	return true
+}
+
+// Departments returns the cached central department catalogue.
+func (m *Memory) Departments() []domain.Department {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]domain.Department, len(m.departments))
+	copy(out, m.departments)
+	return out
+}
+
+// SetDepartments replaces the cached department catalogue (from the auth sync).
+func (m *Memory) SetDepartments(depts []domain.Department) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.departments = depts
+}
+
+/* ---- GP master ---- */
+
+func (m *Memory) GPs() []domain.GP {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]domain.GP, len(m.gps))
+	copy(out, m.gps)
+	return out
+}
+
+// SaveGP inserts (empty ID) or updates a GP. Returns the stored record.
+func (m *Memory) SaveGP(gp domain.GP) domain.GP {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if gp.ID == "" {
+		m.seqGP++
+		gp.ID = fmt.Sprintf("gp-%d", m.seqGP)
+		m.gps = append(m.gps, gp)
+		return gp
+	}
+	for i := range m.gps {
+		if m.gps[i].ID == gp.ID {
+			m.gps[i] = gp
+			return gp
+		}
+	}
+	return domain.GP{}
+}
+
+func (m *Memory) DeleteGP(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.gps {
+		if m.gps[i].ID == id {
+			m.gps = append(m.gps[:i], m.gps[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+/* ---- Building type master ---- */
+
+func (m *Memory) BuildingTypes() []domain.BuildingType {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]domain.BuildingType, len(m.types))
+	copy(out, m.types)
+	return out
+}
+
+func (m *Memory) SaveBuildingType(t domain.BuildingType) domain.BuildingType {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if t.ID == "" {
+		m.seqType++
+		t.ID = fmt.Sprintf("type-%d", m.seqType)
+		m.types = append(m.types, t)
+		return t
+	}
+	for i := range m.types {
+		if m.types[i].ID == t.ID {
+			m.types[i] = t
+			return t
+		}
+	}
+	return domain.BuildingType{}
+}
+
+func (m *Memory) DeleteBuildingType(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.types {
+		if m.types[i].ID == id {
+			m.types = append(m.types[:i], m.types[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+/* ---- Lebar master ---- */
+
+func (m *Memory) Lebars() []domain.Lebar {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]domain.Lebar, len(m.lebars))
+	copy(out, m.lebars)
+	return out
+}
+
+func (m *Memory) SaveLebar(l domain.Lebar) domain.Lebar {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if l.ID == "" {
+		m.seqLebar++
+		l.ID = fmt.Sprintf("lebar-%d", m.seqLebar)
+		m.lebars = append(m.lebars, l)
+		return l
+	}
+	for i := range m.lebars {
+		if m.lebars[i].ID == l.ID {
+			m.lebars[i] = l
+			return l
+		}
+	}
+	return domain.Lebar{}
+}
+
+func (m *Memory) DeleteLebar(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.lebars {
+		if m.lebars[i].ID == id {
+			m.lebars = append(m.lebars[:i], m.lebars[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+/* ---- Lokasi master ---- */
+
+func (m *Memory) Lokasis() []domain.Lokasi {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]domain.Lokasi, len(m.lokasis))
+	copy(out, m.lokasis)
+	return out
+}
+
+func (m *Memory) SaveLokasi(l domain.Lokasi) domain.Lokasi {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if l.ID == "" {
+		m.seqLokasi++
+		l.ID = fmt.Sprintf("lokasi-%d", m.seqLokasi)
+		m.lokasis = append(m.lokasis, l)
+		return l
+	}
+	for i := range m.lokasis {
+		if m.lokasis[i].ID == l.ID {
+			m.lokasis[i] = l
+			return l
+		}
+	}
+	return domain.Lokasi{}
+}
+
+func (m *Memory) DeleteLokasi(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.lokasis {
+		if m.lokasis[i].ID == id {
+			m.lokasis = append(m.lokasis[:i], m.lokasis[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+/* ---- Blok master (per project) ---- */
+
+func (m *Memory) BloksByProject(projectID string) []domain.Blok {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []domain.Blok{}
+	for _, b := range m.bloks {
+		if b.ProjectID == projectID {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func (m *Memory) SaveBlok(b domain.Blok) domain.Blok {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if b.ID == "" {
+		m.seqBlok++
+		b.ID = fmt.Sprintf("blok-%d", m.seqBlok)
+		m.bloks = append(m.bloks, b)
+		return b
+	}
+	for i := range m.bloks {
+		if m.bloks[i].ID == b.ID {
+			b.ProjectID = m.bloks[i].ProjectID // project is immutable
+			m.bloks[i] = b
+			return b
+		}
+	}
+	return domain.Blok{}
+}
+
+func (m *Memory) DeleteBlok(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.bloks {
+		if m.bloks[i].ID == id {
+			m.bloks = append(m.bloks[:i], m.bloks[i+1:]...)
+			// Orphan any kavling that referenced this blok.
+			for j := range m.kavling {
+				if m.kavling[j].BlokID == id {
+					m.kavling[j].BlokID = ""
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
+/* ---- Kavling (per project) ---- */
+
+func (m *Memory) KavlingByProject(projectID string) []domain.Kavling {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []domain.Kavling{}
+	for _, k := range m.kavling {
+		if k.ProjectID == projectID {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+func (m *Memory) SaveKavling(k domain.Kavling) domain.Kavling {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if k.ID == "" {
+		m.seqKav++
+		k.ID = fmt.Sprintf("kav-%d", m.seqKav)
+		m.kavling = append(m.kavling, k)
+		return k
+	}
+	for i := range m.kavling {
+		if m.kavling[i].ID == k.ID {
+			k.ProjectID = m.kavling[i].ProjectID // project is immutable
+			m.kavling[i] = k
+			return k
+		}
+	}
+	return domain.Kavling{}
+}
+
+func (m *Memory) DeleteKavling(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.kavling {
+		if m.kavling[i].ID == id {
+			m.kavling = append(m.kavling[:i], m.kavling[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// UpsertUser inserts a user, or updates the Name/Role of an existing one while
+// preserving its credentials (Salt/PasswordHash). Used by the auth SSO roster
+// sync so central account changes reflect here. Returns true if anything changed.
+func (m *Memory) UpsertUser(u domain.User) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if existing, ok := m.users[u.Username]; ok {
+		if existing.Name == u.Name && existing.Role == u.Role {
+			return false
+		}
+		existing.Name = u.Name
+		existing.Role = u.Role
+		m.users[u.Username] = existing
+		return true
 	}
 	m.users[u.Username] = u
 	return true
@@ -484,14 +837,27 @@ type userSnap struct {
 }
 
 type stateSnap struct {
-	Users      []userSnap                     `json:"users"`
-	Projects   map[string]*domain.Project     `json:"projects"`
-	Drawings   map[string]*domain.WorkDrawing `json:"drawings"`
-	Docs       map[string][]byte              `json:"docs"`
-	CicleBoard json.RawMessage                `json:"cicleBoard,omitempty"`
-	NextNo     int                            `json:"nextNo"`
-	SeqWD      int                            `json:"seqWD"`
-	SeqTask    int                            `json:"seqTask"`
+	Users       []userSnap                     `json:"users"`
+	Departments []domain.Department            `json:"departments,omitempty"`
+	GPs         []domain.GP                    `json:"gps,omitempty"`
+	Types       []domain.BuildingType          `json:"types,omitempty"`
+	Lebars      []domain.Lebar                 `json:"lebars,omitempty"`
+	Lokasis     []domain.Lokasi                `json:"lokasis,omitempty"`
+	Bloks       []domain.Blok                  `json:"bloks,omitempty"`
+	Kavling     []domain.Kavling               `json:"kavling,omitempty"`
+	Projects    map[string]*domain.Project     `json:"projects"`
+	Drawings    map[string]*domain.WorkDrawing `json:"drawings"`
+	Docs        map[string][]byte              `json:"docs"`
+	CicleBoard  json.RawMessage                `json:"cicleBoard,omitempty"`
+	NextNo      int                            `json:"nextNo"`
+	SeqWD       int                            `json:"seqWD"`
+	SeqTask     int                            `json:"seqTask"`
+	SeqGP       int                            `json:"seqGP"`
+	SeqType     int                            `json:"seqType"`
+	SeqBlok     int                            `json:"seqBlok"`
+	SeqKav      int                            `json:"seqKav"`
+	SeqLebar    int                            `json:"seqLebar"`
+	SeqLokasi   int                            `json:"seqLokasi"`
 }
 
 // SnapshotJSON serialises the entire store (including password material) for
@@ -500,9 +866,13 @@ func (m *Memory) SnapshotJSON() ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	s := stateSnap{
+		Departments: m.departments, GPs: m.gps, Types: m.types, Lebars: m.lebars, Lokasis: m.lokasis,
+		Bloks: m.bloks, Kavling: m.kavling,
 		Projects: m.projects, Drawings: m.drawings, Docs: m.docs,
 		CicleBoard: m.cicleBoard,
 		NextNo:     m.nextNo, SeqWD: m.seqWD, SeqTask: m.seqTask,
+		SeqGP: m.seqGP, SeqType: m.seqType, SeqBlok: m.seqBlok, SeqKav: m.seqKav,
+		SeqLebar: m.seqLebar, SeqLokasi: m.seqLokasi,
 	}
 	for _, u := range m.users {
 		s.Users = append(s.Users, userSnap{u.Username, u.Name, u.Role, u.Salt, u.PasswordHash})
@@ -522,6 +892,16 @@ func (m *Memory) LoadJSON(data []byte) error {
 	for _, u := range s.Users {
 		m.users[u.Username] = domain.User{Username: u.Username, Name: u.Name, Role: u.Role, Salt: u.Salt, PasswordHash: u.PasswordHash}
 	}
+	m.departments = s.Departments
+	m.gps = s.GPs
+	m.types = s.Types
+	m.lebars = s.Lebars
+	m.lokasis = s.Lokasis
+	m.bloks = s.Bloks
+	m.kavling = s.Kavling
+	m.seqGP, m.seqType = s.SeqGP, s.SeqType
+	m.seqBlok, m.seqKav = s.SeqBlok, s.SeqKav
+	m.seqLebar, m.seqLokasi = s.SeqLebar, s.SeqLokasi
 	m.projects = s.Projects
 	if m.projects == nil {
 		m.projects = map[string]*domain.Project{}

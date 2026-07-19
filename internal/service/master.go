@@ -41,6 +41,10 @@ type MasterData struct {
 	Template  []domain.TemplateCategory `json:"template"`
 	Accounts  []AccountInfo             `json:"accounts"`
 	Divisions []DivisionInfo            `json:"divisions"`
+	GPs       []domain.GP               `json:"gps"`
+	Types     []domain.BuildingType     `json:"types"`
+	Lebars    []domain.Lebar            `json:"lebars"`
+	Lokasis   []domain.Lokasi           `json:"lokasis"`
 	SeedCount int                       `json:"seedCount"` // number of seeded (built-in) projects
 }
 
@@ -48,17 +52,37 @@ type MasterData struct {
 // to flag manually added projects in the master view.
 const seedProjectCount = 32
 
-// Master returns all master reference data for the "Data Master" view.
-func (s *Service) Master() MasterData {
+// Master returns all master reference data for the "Data Master" view. It first
+// syncs the account roster from the central auth SSO (best-effort) so karyawan
+// added in Admin pusat appear here as assignable PIC.
+func (s *Service) Master(token string) MasterData {
+	s.syncFromAuth(token)
 	projects := s.repo.Projects()
+	// Initialise slices so an empty portfolio serialises as [] (not null), which
+	// the frontend maps over directly.
 	md := MasterData{
 		Template:  domain.TemplateTree(),
 		SeedCount: seedProjectCount,
+		Projects:  []MasterProjectInfo{},
+		Accounts:  []AccountInfo{},
+		Divisions: []DivisionInfo{},
+		GPs:       s.repo.GPs(),
+		Types:     s.repo.BuildingTypes(),
+		Lebars:    s.repo.Lebars(),
+		Lokasis:   s.repo.Lokasis(),
 	}
 	for _, p := range projects {
+		// Jumlah Unit/Tipe are DERIVED from kavling (Fase 2), not manual counts.
+		kav := s.repo.KavlingByProject(p.ID)
+		typeSet := map[string]bool{}
+		for _, k := range kav {
+			if k.TypeID != "" {
+				typeSet[k.TypeID] = true
+			}
+		}
 		md.Projects = append(md.Projects, MasterProjectInfo{
 			ID: p.ID, No: p.No, GP: p.GP, Name: p.Name, Lokasi: p.Lokasi,
-			Luas: p.Luas, Units: p.Units, Types: p.Types, Tasks: len(p.Tasks),
+			Luas: p.Luas, Units: len(kav), Types: len(typeSet), Tasks: len(p.Tasks),
 			Added: p.No > seedProjectCount,
 		})
 	}
@@ -69,8 +93,8 @@ func (s *Service) Master() MasterData {
 			RoleLabel: roleLabels[u.Role], IsPIC: isPIC,
 		})
 	}
-	for _, d := range divisionOrder {
-		md.Divisions = append(md.Divisions, DivisionInfo{Division: d.div, Label: d.label})
+	for _, d := range s.repo.Departments() {
+		md.Divisions = append(md.Divisions, DivisionInfo{Division: domain.Division(d.Code), Label: d.Name})
 	}
 	return md
 }

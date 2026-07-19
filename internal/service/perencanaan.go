@@ -6,6 +6,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ type Service struct {
 	repo     repository.Store
 	sessions *auth.SessionStore
 	now      func() time.Time // injectable clock (defaults to time.Now)
-	gk       GKConfig
+	gk       GKConfig // Deep Revisi AI — vision proxied through auth (central key + vision model)
 }
 
 // New builds a Service from the store and session manager. repo may be the
@@ -93,6 +94,8 @@ func (s *Service) Project(id string) (ProjectDetail, error) {
 	return ProjectDetail{
 		ProjectRollup: rollupProject(p, true),
 		Tasks:         p.Tasks,
+		Bloks:         s.repo.BloksByProject(id),
+		Kavling:       s.repo.KavlingByProject(id),
 	}, nil
 }
 
@@ -154,7 +157,7 @@ func (s *Service) AddTask(role, projectID string, in AddTaskInput) (ProjectDetai
 		strings.TrimSpace(in.Group) == "" {
 		return ProjectDetail{}, ErrValidation
 	}
-	if !s.validPIC(in.PIC) || !validDivision(in.Output) {
+	if !s.validPIC(in.PIC) || !s.validDivision(in.Output) {
 		return ProjectDetail{}, ErrValidation
 	}
 	_, ok := s.repo.AddTask(projectID, domain.Task{
@@ -190,7 +193,7 @@ func (s *Service) ReassignTask(role, projectID, taskID string, in ReassignTaskIn
 	if !canManage(role) {
 		return ProjectDetail{}, ErrForbidden
 	}
-	if !s.validPIC(in.PIC) || !validDivision(in.Output) {
+	if !s.validPIC(in.PIC) || !s.validDivision(in.Output) {
 		return ProjectDetail{}, ErrValidation
 	}
 	if !s.repo.UpdateTaskMeta(projectID, taskID, in.PIC, in.Output) {
@@ -201,8 +204,9 @@ func (s *Service) ReassignTask(role, projectID, taskID string, in ReassignTaskIn
 
 /* ---- Review flow: upload PDF -> Kadep approves (-> Selesai) ------------- */
 
-// maxDocBytes caps an uploaded review PDF (10 MiB).
-const maxDocBytes = 10 << 20
+// maxDocBytes caps an uploaded review PDF (100 MiB — real CAD-exported
+// deliverable/gambar-kerja PDFs can be very large).
+const maxDocBytes = 100 << 20
 
 // canApprove reports whether a role may approve/reject/revise a review
 // (Kadep, CEO, or the operational director Dirops).
@@ -235,8 +239,14 @@ func (s *Service) UploadTaskDoc(actor domain.User, projectID, taskID, filename s
 	if !canManage(actor.Role) && actor.Username != pic {
 		return ProjectDetail{}, ErrForbidden
 	}
-	if len(data) == 0 || len(data) > maxDocBytes || !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
-		return ProjectDetail{}, ErrValidation
+	if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+		return ProjectDetail{}, fmt.Errorf("%w: hanya file PDF yang diperbolehkan", ErrValidation)
+	}
+	if len(data) == 0 {
+		return ProjectDetail{}, fmt.Errorf("%w: file kosong", ErrValidation)
+	}
+	if len(data) > maxDocBytes {
+		return ProjectDetail{}, fmt.Errorf("%w: ukuran PDF %d MB melebihi batas %d MB", ErrValidation, len(data)>>20, maxDocBytes>>20)
 	}
 	doc := domain.TaskDoc{
 		Name: filename, Size: len(data),
@@ -317,14 +327,14 @@ func (s *Service) validPIC(username string) bool {
 	return ok
 }
 
-// validDivision reports whether d is an acceptable output target for a task.
-func validDivision(d domain.Division) bool {
-	switch d {
-	case domain.DivNone, domain.DivLegal, domain.DivMarketing, domain.DivTeknik, domain.DivKonsumen:
-		return true
-	}
-	return false
-}
+// validDivision reports whether d is an acceptable output target. The output is
+// a free-form department code now (dynamic, from the central catalogue) and the
+// frontend only offers valid departments, so we accept any value: "" (no
+// division), a current department code, OR a legacy code (e.g. "legal" from
+// before divisions went dynamic) — the latter is preserved as-is and simply
+// dropped from OutputsByDivision aggregation until re-picked. Blocking a task
+// edit just because its OLD output no longer maps to a department is worse.
+func (s *Service) validDivision(_ domain.Division) bool { return true }
 
 // UpdateTask changes a task's status. Permitted for CEO / Kadep, or the author
 // (PIC) who owns the task.

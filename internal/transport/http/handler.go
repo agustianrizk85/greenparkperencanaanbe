@@ -253,6 +253,122 @@ func (h *Handler) rejectTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, detail)
 }
 
+// startTaskAI kicks off Deep Analisis AI on a task's review PDF (vision QC vs the
+// selected checklist skill(s)). The vision check runs via auth's central key —
+// forward the caller's token. Body is optional: { "skills": ["name", …] }.
+func (h *Handler) startTaskAI(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Skills []string `json:"skills"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&in)
+	}
+	if err := h.svc.StartTaskAI(r.PathValue("id"), r.PathValue("taskId"), bearerToken(r), in.Skills); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "running"})
+}
+
+// taskAIStatus returns the task's Deep Analisis state (progress + findings).
+func (h *Handler) taskAIStatus(w http.ResponseWriter, r *http.Request) {
+	t, err := h.svc.TaskAIStatus(r.PathValue("id"), r.PathValue("taskId"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+// taskAIPDF serves the annotated Deep Analisis result PDF for a task.
+func (h *Handler) taskAIPDF(w http.ResponseWriter, r *http.Request) {
+	data, name, ok := h.svc.TaskAIAnnotated(r.PathValue("id"), r.PathValue("taskId"))
+	if !ok {
+		writeServiceError(w, service.ErrNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "inline; filename=\""+name+"\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+/* ---- Skills (multi checklist markdown for the AI features) --------------- */
+
+func (h *Handler) skillsList(w http.ResponseWriter, _ *http.Request) {
+	list, err := h.svc.ListSkills()
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *Handler) skillGet(w http.ResponseWriter, r *http.Request) {
+	content, err := h.svc.ReadSkill(r.PathValue("name"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": r.PathValue("name"), "content": content})
+}
+
+// skillManager gates skill mutations to Kadep / CEO / Dirops.
+func skillManager(r *http.Request) bool {
+	user, _ := userFromContext(r.Context())
+	return user.Role == domain.RoleKadep || user.Role == domain.RoleCEO || user.Role == domain.RoleDirops
+}
+
+func (h *Handler) skillPut(w http.ResponseWriter, r *http.Request) {
+	if !skillManager(r) {
+		writeServiceError(w, service.ErrForbidden)
+		return
+	}
+	var in struct {
+		Content string `json:"content"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if err := h.svc.WriteSkill(r.PathValue("name"), in.Content); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": r.PathValue("name"), "content": in.Content, "status": "ok"})
+}
+
+func (h *Handler) skillCreate(w http.ResponseWriter, r *http.Request) {
+	if !skillManager(r) {
+		writeServiceError(w, service.ErrForbidden)
+		return
+	}
+	var in struct {
+		Name  string `json:"name"`
+		Title string `json:"title"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	meta, err := h.svc.CreateSkill(in.Name, in.Title)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, meta)
+}
+
+func (h *Handler) skillDelete(w http.ResponseWriter, r *http.Request) {
+	if !skillManager(r) {
+		writeServiceError(w, service.ErrForbidden)
+		return
+	}
+	if err := h.svc.DeleteSkill(r.PathValue("name")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 /* ---- Task assignment (by PIC) ------------------------------------------ */
 
 // myTasks returns the authenticated user's assigned tasks, or — for a manager
@@ -366,7 +482,8 @@ func (h *Handler) getGKDoc(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) startDeepRevisi(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.StartDeepRevisi(r.PathValue("id")); err != nil {
+	// The vision check runs via auth's central key — forward the caller's token.
+	if err := h.svc.StartDeepRevisi(r.PathValue("id"), bearerToken(r)); err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -382,10 +499,51 @@ func (h *Handler) deepRevisiStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
+// gkConfigGet reports the Deep Revisi status for the modal (read-only): whether
+// the CENTRAL Kunci AI is set + the general and VISION models — all managed in
+// Panel Admin → Kunci AI.
+func (h *Handler) gkConfigGet(w http.ResponseWriter, r *http.Request) {
+	keyConfigured, keyModel, visionModel := h.svc.GKKeyStatus(bearerToken(r))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"keyConfigured": keyConfigured,
+		"keyModel":      keyModel,
+		"visionModel":   visionModel,
+	})
+}
+
+// gkSkillGet returns the editable Deep Revisi checklist markdown (the "skill"
+// the vision AI follows). `fromFile` is false when the built-in default is shown.
+func (h *Handler) gkSkillGet(w http.ResponseWriter, _ *http.Request) {
+	content, fromFile := h.svc.GKSkillContent()
+	writeJSON(w, http.StatusOK, map[string]any{"content": content, "fromFile": fromFile})
+}
+
+// gkSkillSet saves the checklist markdown. Managers only. Takes effect on the
+// next Deep Revisi run (hot-editable).
+func (h *Handler) gkSkillSet(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if user.Role != domain.RoleKadep && user.Role != domain.RoleCEO && user.Role != domain.RoleDirops {
+		writeServiceError(w, service.ErrForbidden)
+		return
+	}
+	var in struct {
+		Content string `json:"content"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if err := h.svc.SaveGKSkill(in.Content); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	content, fromFile := h.svc.GKSkillContent()
+	writeJSON(w, http.StatusOK, map[string]any{"content": content, "fromFile": fromFile, "status": "ok"})
+}
+
 /* ---- Staff / team ------------------------------------------------------ */
 
-func (h *Handler) staff(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, h.svc.Staff())
+func (h *Handler) staff(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.svc.Staff(bearerToken(r)))
 }
 
 /* ---- Cicle board mirror (full Kanban synced from cicle) --------------- */
@@ -446,8 +604,166 @@ func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 /* ---- Master reference data --------------------------------------------- */
 
-func (h *Handler) master(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, h.svc.Master())
+func (h *Handler) master(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.svc.Master(bearerToken(r)))
+}
+
+/* ---- GP + building-type masters (Fase 1) — CEO/Kadep manage ---- */
+
+func (h *Handler) saveGP(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in domain.GP
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if id := r.PathValue("id"); id != "" {
+		in.ID = id
+	}
+	gp, err := h.svc.SaveGP(user.Role, in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, gp)
+}
+
+func (h *Handler) deleteGP(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.DeleteGP(user.Role, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) saveBuildingType(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in domain.BuildingType
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if id := r.PathValue("id"); id != "" {
+		in.ID = id
+	}
+	t, err := h.svc.SaveBuildingType(user.Role, in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (h *Handler) deleteBuildingType(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.DeleteBuildingType(user.Role, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) saveLebar(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in domain.Lebar
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if id := r.PathValue("id"); id != "" {
+		in.ID = id
+	}
+	l, err := h.svc.SaveLebar(user.Role, in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, l)
+}
+func (h *Handler) deleteLebar(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.DeleteLebar(user.Role, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+func (h *Handler) saveLokasi(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in domain.Lokasi
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if id := r.PathValue("id"); id != "" {
+		in.ID = id
+	}
+	l, err := h.svc.SaveLokasi(user.Role, in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, l)
+}
+func (h *Handler) deleteLokasi(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.DeleteLokasi(user.Role, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+/* ---- Blok + Kavling (Fase 2) ---- */
+
+func (h *Handler) saveBlok(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in domain.Blok
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if id := r.PathValue("id"); id != "" {
+		in.ID = id
+	}
+	// projectId comes from the path for creation; empty on update (blok keeps it).
+	b, err := h.svc.SaveBlok(user.Role, r.PathValue("projectId"), in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, b)
+}
+
+func (h *Handler) deleteBlok(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.DeleteBlok(user.Role, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) saveKavling(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in domain.Kavling
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if id := r.PathValue("id"); id != "" {
+		in.ID = id
+	}
+	k, err := h.svc.SaveKavling(user.Role, r.PathValue("projectId"), in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, k)
+}
+
+func (h *Handler) deleteKavling(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.DeleteKavling(user.Role, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 /* ---- Admin: seed demo / reset process / reset master ------------------- */

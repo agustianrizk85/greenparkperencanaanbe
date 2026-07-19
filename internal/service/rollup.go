@@ -52,7 +52,9 @@ type ProjectRollup struct {
 // ProjectDetail is a project rollup with its full task list.
 type ProjectDetail struct {
 	ProjectRollup
-	Tasks []domain.Task `json:"tasks"`
+	Tasks   []domain.Task    `json:"tasks"`
+	Bloks   []domain.Blok    `json:"bloks"`
+	Kavling []domain.Kavling `json:"kavling"`
 }
 
 // AssignedTask is a task annotated with its owning project (for the PIC view).
