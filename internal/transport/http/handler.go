@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 
 	"greenpark/perencanaan/internal/authmw"
 	"greenpark/perencanaan/internal/domain"
@@ -37,12 +38,64 @@ func (h *Handler) ssoUser(tok string) (domain.User, bool) {
 	if role == "" || c.Super {
 		role = domain.RoleKadep
 	}
-	return domain.User{Username: c.Username, Name: c.Name, Role: role}, true
+	return domain.User{Username: c.Username, Name: c.Name, Role: role, Division: "perencanaan"}, true
+}
+
+// ssoUserAny verifies an SSO token WITHOUT the CanAccess("perencanaan")
+// requirement — any valid SSO user from ANY division is accepted. Used for the
+// shared department board (/api/board/*) and its realtime WebSocket only.
+//
+// Role mapping for the board: super OR any dept role in {ceo,dirops,kadep} →
+// kadep (board admin); otherwise the user's plain role in their home division
+// (fallback "staff"). The home division is the first dept in the claims,
+// preferring "perencanaan" when present.
+func (h *Handler) ssoUserAny(tok string) (domain.User, bool) {
+	if h.sso == nil || tok == "" {
+		return domain.User{}, false
+	}
+	c, err := h.sso.Verify(tok)
+	if err != nil {
+		return domain.User{}, false
+	}
+	// Deterministic dept order: "perencanaan" first, then sorted.
+	depts := make([]string, 0, len(c.Roles))
+	for d := range c.Roles {
+		depts = append(depts, d)
+	}
+	sort.Strings(depts)
+	division := ""
+	if _, ok := c.Roles["perencanaan"]; ok {
+		division = "perencanaan"
+	} else if len(depts) > 0 {
+		division = depts[0]
+	}
+	role := ""
+	if c.Super {
+		role = domain.RoleKadep
+	} else {
+		for _, d := range depts {
+			switch c.Roles[d] {
+			case domain.RoleCEO, domain.RoleDirops, domain.RoleKadep:
+				role = domain.RoleKadep
+			}
+		}
+	}
+	if role == "" {
+		role = c.Roles[division]
+	}
+	if role == "" {
+		role = "staff"
+	}
+	return domain.User{Username: c.Username, Name: c.Name, Role: role, Division: division}, true
 }
 
 // NewHandler creates a Handler bound to the given service.
 func NewHandler(svc *service.Service) *Handler {
-	return &Handler{svc: svc, hub: newWSHub()}
+	h := &Handler{svc: svc, hub: newWSHub()}
+	// Background jobs (board Cek AI) mutate data outside an HTTP request, so
+	// bumpOnWrite never sees them — let the service push a realtime rev bump.
+	svc.SetChangeNotifier(h.hub.bump)
+	return h
 }
 
 /* ---- Health ------------------------------------------------------------ */
@@ -93,6 +146,16 @@ func (h *Handler) resolveUser(token string) (domain.User, bool) {
 	return h.ssoUser(token) // fall back to the unified SSO login token
 }
 
+// resolveUserAny is the board-scope variant: native perencanaan tokens work
+// unchanged, and SSO tokens from ANY division are accepted (ssoUserAny).
+func (h *Handler) resolveUserAny(token string) (domain.User, bool) {
+	if u, ok := h.svc.UserByToken(token); ok {
+		u.Division = "perencanaan" // native accounts are the department's own
+		return u, true
+	}
+	return h.ssoUserAny(token)
+}
+
 /* ---- Summary ----------------------------------------------------------- */
 
 func (h *Handler) summary(w http.ResponseWriter, _ *http.Request) {
@@ -112,6 +175,17 @@ func (h *Handler) getProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
+}
+
+// deleteProject removes a project + all it owns (tasks, bloks, kavling, docs,
+// attachment files). Irreversible.
+func (h *Handler) deleteProject(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.DeleteProject(user.Role, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) addProject(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +222,43 @@ func (h *Handler) updateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
+}
+
+// setTaskSchedule persists a task's Mulai/Deadline/Selesai dates (nil field =
+// unchanged). Editable by the owning PIC or a manager.
+func (h *Handler) setTaskSchedule(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in struct {
+		Start    *string `json:"start"`
+		Deadline *string `json:"deadline"`
+		Finish   *string `json:"finish"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if err := h.svc.SetTaskSchedule(user, r.PathValue("id"), r.PathValue("taskId"), in.Start, in.Deadline, in.Finish); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// importTasks backfills existing project tasks (matched by name) with status +
+// schedule dates from parsed spreadsheet rows.
+func (h *Handler) importTasks(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in struct {
+		Rows []service.TaskImportRow `json:"rows"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	res, err := h.svc.ImportTasks(user.Role, r.PathValue("id"), in.Rows)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (h *Handler) addTask(w http.ResponseWriter, r *http.Request) {
@@ -263,7 +374,7 @@ func (h *Handler) startTaskAI(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&in)
 	}
-	if err := h.svc.StartTaskAI(r.PathValue("id"), r.PathValue("taskId"), bearerToken(r), in.Skills); err != nil {
+	if err := h.svc.StartTaskAI(r.PathValue("id"), r.PathValue("taskId"), bearerToken(r), in.Skills, ""); err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -755,6 +866,67 @@ func (h *Handler) saveKavling(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, k)
+}
+
+// importProjects bulk-creates projects from parsed rows with one shared
+// deliverable template. The frontend parses + maps columns.
+func (h *Handler) importProjects(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in struct {
+		Rows           []service.ProjectImportRow `json:"rows"`
+		SitePlans      int                        `json:"sitePlans"`
+		IncludeUnit    bool                       `json:"includeUnit"`
+		IncludeKawasan bool                       `json:"includeKawasan"`
+		SkipExisting   bool                       `json:"skipExisting"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	res, err := h.svc.ImportProjects(user.Role, in.Rows, in.SitePlans, in.IncludeUnit, in.IncludeKawasan, in.SkipExisting)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// importMaster bulk-creates/updates one Master Produk kind (gp/tipe/lebar/lokasi)
+// from parsed spreadsheet rows. The frontend parses + maps columns.
+func (h *Handler) importMaster(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in struct {
+		Kind   string                    `json:"kind"`
+		Rows   []service.MasterImportRow `json:"rows"`
+		Upsert bool                      `json:"upsert"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	res, err := h.svc.ImportMaster(user.Role, in.Kind, in.Rows, in.Upsert)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// importKavling bulk-creates kavling from parsed spreadsheet rows (paste / XLSX /
+// CSV). The frontend does the parsing + column mapping and sends clean rows.
+func (h *Handler) importKavling(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	var in struct {
+		Rows   []service.KavlingImportRow `json:"rows"`
+		Upsert bool                       `json:"upsert"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	res, err := h.svc.ImportKavling(user.Role, r.PathValue("projectId"), in.Rows, in.Upsert)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (h *Handler) deleteKavling(w http.ResponseWriter, r *http.Request) {

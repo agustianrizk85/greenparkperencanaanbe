@@ -11,3 +11,7 @@ perencanaan-server
 *.exe
 *.exe~
 *.test
+
+# Python bytecode cache (Deep Analisis scripts)
+__pycache__/
+*.pyc

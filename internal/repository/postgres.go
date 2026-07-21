@@ -175,6 +175,14 @@ func (p *Persistent) SaveBlok(b domain.Blok) domain.Blok {
 	return out
 }
 
+func (p *Persistent) DeleteProject(id string) bool {
+	ok := p.Memory.DeleteProject(id)
+	if ok {
+		_ = p.save()
+	}
+	return ok
+}
+
 func (p *Persistent) DeleteBlok(id string) bool {
 	ok := p.Memory.DeleteBlok(id)
 	if ok {
@@ -284,4 +292,87 @@ func (p *Persistent) MutateWorkDrawing(id string, fn func(*domain.WorkDrawing)) 
 func (p *Persistent) SetCicleBoard(data json.RawMessage) {
 	p.Memory.SetCicleBoard(data)
 	_ = p.save()
+}
+
+/* ---- department Kanban board ------------------------------------------- */
+
+func (p *Persistent) EnsureBoardSystemLists() {
+	p.Memory.EnsureBoardSystemLists()
+	_ = p.save()
+}
+
+func (p *Persistent) AddBoardList(title, createdBy string) domain.BoardList {
+	out := p.Memory.AddBoardList(title, createdBy)
+	_ = p.save()
+	return out
+}
+
+func (p *Persistent) UpdateBoardList(listID string, title *string, index *int) (domain.BoardList, bool) {
+	out, ok := p.Memory.UpdateBoardList(listID, title, index)
+	if ok {
+		_ = p.save()
+	}
+	return out, ok
+}
+
+func (p *Persistent) DeleteBoardList(listID string) ([]string, bool) {
+	atts, ok := p.Memory.DeleteBoardList(listID)
+	if ok {
+		_ = p.save()
+	}
+	return atts, ok
+}
+
+func (p *Persistent) AddBoardCard(listID string, card domain.BoardCard) (domain.BoardCard, bool) {
+	out, ok := p.Memory.AddBoardCard(listID, card)
+	if ok {
+		_ = p.save()
+	}
+	return out, ok
+}
+
+func (p *Persistent) MutateBoardCard(cardID string, fn func(c *domain.BoardCard, newID func(prefix string) string) error) (domain.BoardCard, bool, error) {
+	out, ok, err := p.Memory.MutateBoardCard(cardID, fn)
+	if ok && err == nil {
+		_ = p.save()
+	}
+	return out, ok, err
+}
+
+func (p *Persistent) MoveBoardCard(cardID, toListID string, index int, at string) (domain.BoardCard, bool) {
+	out, ok := p.Memory.MoveBoardCard(cardID, toListID, index, at)
+	if ok {
+		_ = p.save()
+	}
+	return out, ok
+}
+
+func (p *Persistent) DeleteBoardCard(cardID string) ([]string, bool) {
+	atts, ok := p.Memory.DeleteBoardCard(cardID)
+	if ok {
+		_ = p.save()
+	}
+	return atts, ok
+}
+
+func (p *Persistent) AddBoardLabel(name, color string) domain.BoardLabel {
+	out := p.Memory.AddBoardLabel(name, color)
+	_ = p.save()
+	return out
+}
+
+func (p *Persistent) UpdateBoardLabel(labelID string, name, color *string) (domain.BoardLabel, bool) {
+	out, ok := p.Memory.UpdateBoardLabel(labelID, name, color)
+	if ok {
+		_ = p.save()
+	}
+	return out, ok
+}
+
+func (p *Persistent) DeleteBoardLabel(labelID string) bool {
+	ok := p.Memory.DeleteBoardLabel(labelID)
+	if ok {
+		_ = p.save()
+	}
+	return ok
 }

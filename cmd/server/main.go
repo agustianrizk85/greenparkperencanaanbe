@@ -44,6 +44,10 @@ func main() {
 	var repo repository.Store = pg
 	freshStore := pg.Fresh()
 	log.Println("perencanaan: using PostgreSQL store")
+	// The department board is a STATUS board: guarantee the 4 fixed status columns
+	// exist (folding any legacy non-system lists into To Do). Idempotent, runs on
+	// both a fresh seed and a restored snapshot that predates the system lists.
+	repo.EnsureBoardSystemLists()
 	sessions := auth.NewSessionStore(12 * time.Hour)
 	gkCfg := service.GKConfig{
 		OllamaModel: cfg.OllamaModel,
@@ -53,7 +57,13 @@ func main() {
 		AuthAPIBase: cfg.AuthAPIBase,
 	}
 	log.Printf("perencanaan: Deep Revisi AI — vision model %s via auth %s (central key)", gkCfg.OllamaModel, gkCfg.AuthAPIBase)
-	svc := service.New(repo, sessions, gkCfg)
+	// Board attachment files live on disk (only metadata goes into the state
+	// snapshot); make sure the directory exists before the first upload.
+	if err := os.MkdirAll(cfg.UploadDir, 0o755); err != nil {
+		log.Fatalf("perencanaan: create upload dir %s: %v", cfg.UploadDir, err)
+	}
+	log.Printf("perencanaan: board attachment uploads stored in %s", cfg.UploadDir)
+	svc := service.New(repo, sessions, gkCfg, cfg.UploadDir)
 	handler := httptransport.NewHandler(svc)
 	if v := authmw.New(authmw.Options{JWKSURL: os.Getenv("AUTH_JWKS_URL"), Issuer: os.Getenv("AUTH_ISSUER")}); v != nil {
 		handler.SetSSO(v)

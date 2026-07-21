@@ -48,6 +48,7 @@ type Store interface {
 	Projects() []domain.Project
 	Project(id string) (domain.Project, bool)
 	AddProject(gp, name, lokasi, luas string, units, types int, spec domain.ProjectSpec) domain.Project
+	DeleteProject(id string) bool
 	AddTask(projectID string, t domain.Task) (domain.Task, bool)
 	RemoveTask(projectID, taskID string) bool
 	UpdateTaskMeta(projectID, taskID, pic string, output domain.Division) bool
@@ -77,4 +78,27 @@ type Store interface {
 	// Cicle board mirror (raw JSON of the synced Kanban board).
 	CicleBoard() json.RawMessage
 	SetCicleBoard(data json.RawMessage)
+
+	// Department Kanban board (Trello-style). Reads return deep copies with
+	// non-nil nested slices; Delete* return the removed attachment IDs so the
+	// service can delete the files from disk.
+	EnsureBoardSystemLists()
+	Board() []domain.BoardList
+	BoardLabels() []domain.BoardLabel
+	BoardCard(cardID string) (domain.BoardCard, bool)
+	BoardListByID(listID string) (domain.BoardList, bool)
+	AddBoardList(title, createdBy string) domain.BoardList
+	UpdateBoardList(listID string, title *string, index *int) (domain.BoardList, bool)
+	DeleteBoardList(listID string) (attIDs []string, ok bool)
+	AddBoardCard(listID string, card domain.BoardCard) (domain.BoardCard, bool)
+	MutateBoardCard(cardID string, fn func(c *domain.BoardCard, newID func(prefix string) string) error) (domain.BoardCard, bool, error)
+	MoveBoardCard(cardID, toListID string, index int, at string) (domain.BoardCard, bool)
+	DeleteBoardCard(cardID string) (attIDs []string, ok bool)
+	AddBoardLabel(name, color string) domain.BoardLabel
+	UpdateBoardLabel(labelID string, name, color *string) (domain.BoardLabel, bool)
+	DeleteBoardLabel(labelID string) bool
+
+	// NextBoardID mints a fresh board-scoped ID from the shared counter. Used to
+	// name formal-task attachment files, which share the board's upload dir.
+	NextBoardID(prefix string) string
 }

@@ -9,7 +9,8 @@ package domain
 type User struct {
 	Username     string `json:"username"`
 	Name         string `json:"name"`
-	Role         string `json:"role"` // one of the Role* constants
+	Role         string `json:"role"`               // one of the Role* constants
+	Division     string `json:"division,omitempty"` // home department code ("" = perencanaan); set for cross-division SSO board users
 	Salt         []byte `json:"-"`
 	PasswordHash []byte `json:"-"`
 }
@@ -130,6 +131,19 @@ type TaskDoc struct {
 	UploadedAt string `json:"uploadedAt"` // RFC3339
 }
 
+// TaskAttachment is metadata of a file attached to a formal Task (any file type,
+// up to 1 GiB). Same shape as BoardAttachment: the bytes live on disk at
+// <uploadDir>/<ID> (never in the state snapshot), only the metadata rides in the
+// Task (and thus the Project snapshot).
+type TaskAttachment struct {
+	ID   string `json:"id"`
+	Name string `json:"name"` // original filename
+	Size int64  `json:"size"` // bytes
+	Mime string `json:"mime"`
+	By   string `json:"by"` // uploader username
+	At   string `json:"at"` // RFC3339
+}
+
 // Task is a per-project instance of a deliverable in the planning tree.
 //
 //	Category -> Group -> Task (leaf, owned by one PIC, routed to one Division)
@@ -152,6 +166,13 @@ type Task struct {
 	ApprovedAt string     `json:"approvedAt,omitempty"` // RFC3339 (when approved)
 	RevisiNote string     `json:"revisiNote,omitempty"` // revision instruction when sent back (Revisi)
 
+	// Attachments are arbitrary files linked to the task (any type, ≤1 GiB each).
+	// Bytes live on disk (uploadDir/<attId>); only this metadata is persisted.
+	Attachments []TaskAttachment `json:"attachments,omitempty"`
+
+	// Comments is the task's discussion thread (same shape as board-card comments).
+	Comments []BoardComment `json:"comments,omitempty"`
+
 	// Deep Analisis AI — single-document vision QC of the review PDF (Doc) against
 	// the selected checklist skill(s), producing an annotated result PDF. State is
 	// ephemeral, mirroring the WorkDrawing GK block.
@@ -163,6 +184,12 @@ type Task struct {
 	AIAnnotated *TaskDoc      `json:"aiAnnotated,omitempty"` // annotated result PDF (bytes stored in repo)
 	AIError     string        `json:"aiError,omitempty"`
 	AICheckedAt string        `json:"aiCheckedAt,omitempty"` // RFC3339, last completed run
+
+	// Schedule (Proyek view) — server-persisted planning dates, YYYY-MM-DD
+	// ("" = unset). Previously localStorage-only; now shared/persistent.
+	Start    string `json:"start,omitempty"`
+	Deadline string `json:"deadline,omitempty"`
+	Finish   string `json:"finish,omitempty"`
 }
 
 // Project is a development project carrying the full deliverable task list.

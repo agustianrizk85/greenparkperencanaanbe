@@ -71,8 +71,10 @@ var wsUpgrader = websocket.Upgrader{
 
 // ws upgrades the request to a WebSocket. Browsers cannot send the Authorization
 // header on a WS handshake, so the bearer token is passed as a query parameter.
+// Any-division SSO tokens are accepted (resolveUserAny): the socket only pushes
+// {rev} broadcasts, and cross-division users need realtime for the shared board.
 func (h *Handler) ws(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.resolveUser(r.URL.Query().Get("token")); !ok {
+	if _, ok := h.resolveUserAny(r.URL.Query().Get("token")); !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}

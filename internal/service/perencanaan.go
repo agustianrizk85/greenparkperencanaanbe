@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"greenpark/perencanaan/internal/auth"
@@ -25,17 +26,41 @@ var (
 
 // Service exposes the planning use-cases plus authentication.
 type Service struct {
-	repo     repository.Store
-	sessions *auth.SessionStore
-	now      func() time.Time // injectable clock (defaults to time.Now)
-	gk       GKConfig // Deep Revisi AI — vision proxied through auth (central key + vision model)
+	repo      repository.Store
+	sessions  *auth.SessionStore
+	now       func() time.Time // injectable clock (defaults to time.Now)
+	gk        GKConfig         // Deep Revisi AI — vision proxied through auth (central key + vision model)
+	uploadDir string           // board attachment files live here (one file per attachment ID)
+
+	boardRoster boardRosterCache // cross-division member roster (TTL cache, see boardroster.go)
+
+	boardAIMu   sync.Mutex                    // guards boardAIJobs
+	boardAIJobs map[string]*BoardAICheckState // card ID -> Cek AI job state (in-memory only)
+
+	notify func() // optional realtime hook (WS rev bump) for background mutations
 }
 
 // New builds a Service from the store and session manager. repo may be the
 // in-memory store or the Postgres-backed one — both satisfy repository.Store.
 // gk configures the optional Deep Revisi AI feature (zero value = disabled).
-func New(repo repository.Store, sessions *auth.SessionStore, gk GKConfig) *Service {
-	return &Service{repo: repo, sessions: sessions, now: time.Now, gk: gk}
+// uploadDir is where board attachment files are stored on disk.
+func New(repo repository.Store, sessions *auth.SessionStore, gk GKConfig, uploadDir string) *Service {
+	return &Service{
+		repo: repo, sessions: sessions, now: time.Now, gk: gk, uploadDir: uploadDir,
+		boardAIJobs: map[string]*BoardAICheckState{},
+	}
+}
+
+// SetChangeNotifier registers a callback fired after a BACKGROUND data change
+// (e.g. the Cek AI auto-comment) so the transport can bump its realtime
+// revision — bumpOnWrite only covers changes made inside an HTTP request.
+func (s *Service) SetChangeNotifier(fn func()) { s.notify = fn }
+
+// notifyChange fires the registered change notifier, if any.
+func (s *Service) notifyChange() {
+	if s.notify != nil {
+		s.notify()
+	}
 }
 
 // today returns the current date as YYYY-MM-DD.
@@ -135,6 +160,121 @@ func (s *Service) AddProject(role string, in AddProjectInput) (ProjectDetail, er
 	p := s.repo.AddProject(gp, strings.TrimSpace(in.Name), strings.TrimSpace(in.Lokasi),
 		strings.TrimSpace(in.Luas), in.Units, in.Types, spec)
 	return ProjectDetail{ProjectRollup: rollupProject(p, true), Tasks: p.Tasks}, nil
+}
+
+// DeleteProject removes a project and everything it owns: its deliverable tasks,
+// bloks, kavling, and the review/annotated doc bytes (via the repo cascade), plus
+// its task attachment files on disk. Irreversible. CEO / Kadep only.
+func (s *Service) DeleteProject(role, id string) error {
+	if !canManage(role) {
+		return ErrForbidden
+	}
+	p, ok := s.repo.Project(id)
+	if !ok {
+		return ErrNotFound
+	}
+	// Collect task attachment file ids to remove from disk after the state delete.
+	var files []string
+	for _, t := range p.Tasks {
+		for _, a := range t.Attachments {
+			files = append(files, a.ID)
+		}
+	}
+	if !s.repo.DeleteProject(id) {
+		return ErrNotFound
+	}
+	s.removeBoardFiles(files) // best-effort disk cleanup (shared upload dir)
+	return nil
+}
+
+// ProjectImportRow is one parsed spreadsheet row for a bulk project import.
+type ProjectImportRow struct {
+	Name   string `json:"name"`
+	GP     string `json:"gp"`
+	Luas   string `json:"luas"`
+	Lokasi string `json:"lokasi"`
+}
+
+// ProjectImportResult summarizes a bulk project import. Projects are create-only
+// (no update path that preserves the task tree), so existing names are skipped.
+type ProjectImportResult struct {
+	Created       int                `json:"created"`
+	Updated       int                `json:"updated"` // always 0 (kept for FE parity)
+	GPsCreated    []string           `json:"gpsCreated"`
+	LokasiCreated []string           `json:"lokasiCreated"`
+	Skipped       []MasterImportSkip `json:"skipped"`
+}
+
+// ImportProjects bulk-creates projects from parsed rows, applying ONE shared
+// deliverable template (sitePlans / includeUnit / includeKawasan) to all of them.
+// Missing GP + Lokasi masters are auto-created (so the pickers stay clean). When
+// skipExisting is true a row whose Name already exists is skipped (projects have
+// no safe in-place update — it would rebuild the task tree). CEO / Kadep only.
+func (s *Service) ImportProjects(role string, rows []ProjectImportRow, sitePlans int, includeUnit, includeKawasan, skipExisting bool) (ProjectImportResult, error) {
+	if !canManage(role) {
+		return ProjectImportResult{}, ErrForbidden
+	}
+	res := ProjectImportResult{GPsCreated: []string{}, LokasiCreated: []string{}, Skipped: []MasterImportSkip{}}
+	eq := func(a, b string) bool { return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b)) }
+
+	for i, r := range rows {
+		name := strings.TrimSpace(r.Name)
+		if name == "" {
+			res.Skipped = append(res.Skipped, MasterImportSkip{Row: i + 1, Reason: "nama proyek kosong"})
+			continue
+		}
+		if skipExisting {
+			dup := false
+			for _, p := range s.repo.Projects() {
+				if eq(p.Name, name) {
+					dup = true
+					break
+				}
+			}
+			if dup {
+				res.Skipped = append(res.Skipped, MasterImportSkip{Row: i + 1, Key: name, Reason: "nama proyek sudah ada"})
+				continue
+			}
+		}
+		// Auto-create referenced masters so the project's GP/Lokasi resolve.
+		gp := strings.TrimSpace(r.GP)
+		if gp != "" {
+			found := false
+			for _, g := range s.repo.GPs() {
+				if eq(g.Code, gp) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				s.repo.SaveGP(domain.GP{Code: gp})
+				res.GPsCreated = append(res.GPsCreated, gp)
+			}
+		}
+		lokasi := strings.TrimSpace(r.Lokasi)
+		if lokasi != "" {
+			found := false
+			for _, l := range s.repo.Lokasis() {
+				if eq(l.Name, lokasi) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				s.repo.SaveLokasi(domain.Lokasi{Name: lokasi})
+				res.LokasiCreated = append(res.LokasiCreated, lokasi)
+			}
+		}
+		if _, err := s.AddProject(role, AddProjectInput{
+			GP: gp, Name: name, Lokasi: lokasi, Luas: strings.TrimSpace(r.Luas),
+			SitePlans: sitePlans, IncludeUnit: includeUnit, IncludeKawasan: includeKawasan,
+		}); err != nil {
+			res.Skipped = append(res.Skipped, MasterImportSkip{Row: i + 1, Key: name, Reason: "gagal dibuat"})
+			continue
+		}
+		res.Created++
+	}
+	return res, nil
 }
 
 // AddTaskInput is a new deliverable added to a project's tree.
@@ -372,6 +512,128 @@ func validStatus(st domain.TaskStatus) bool {
 		return true
 	}
 	return false
+}
+
+// SetTaskSchedule persists a task's planning dates (Mulai/Deadline/Selesai,
+// YYYY-MM-DD, or "" to clear). Each field is a pointer — nil = leave unchanged.
+// Editable by the owning PIC or a manager (same as status).
+func (s *Service) SetTaskSchedule(actor domain.User, projectID, taskID string, start, deadline, finish *string) error {
+	p, ok := s.repo.Project(projectID)
+	if !ok {
+		return ErrNotFound
+	}
+	pic, found := "", false
+	for _, t := range p.Tasks {
+		if t.ID == taskID {
+			pic, found = t.PIC, true
+			break
+		}
+	}
+	if !found {
+		return ErrNotFound
+	}
+	if !canManage(actor.Role) && actor.Username != pic {
+		return ErrForbidden
+	}
+	if !s.repo.MutateTask(projectID, taskID, func(t *domain.Task) {
+		if start != nil {
+			t.Start = strings.TrimSpace(*start)
+		}
+		if deadline != nil {
+			t.Deadline = strings.TrimSpace(*deadline)
+		}
+		if finish != nil {
+			t.Finish = strings.TrimSpace(*finish)
+		}
+	}) {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// TaskImportRow is one parsed row for a project task backfill (match by name).
+type TaskImportRow struct {
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Start    string `json:"start"`
+	Deadline string `json:"deadline"`
+	Finish   string `json:"finish"`
+}
+
+// TaskImportResult summarizes a task backfill import.
+type TaskImportResult struct {
+	Updated int                `json:"updated"`
+	Skipped []MasterImportSkip `json:"skipped"`
+}
+
+// ImportTasks backfills EXISTING project tasks (matched by name, case-insensitive)
+// with a status + planning dates. Rows whose name matches no task are skipped +
+// reported (tasks are defined in the Deliverable editor, not created here). A
+// blank status/date leaves that field unchanged. CEO / Kadep only.
+func (s *Service) ImportTasks(role, projectID string, rows []TaskImportRow) (TaskImportResult, error) {
+	if !canManage(role) {
+		return TaskImportResult{}, ErrForbidden
+	}
+	p, ok := s.repo.Project(projectID)
+	if !ok {
+		return TaskImportResult{}, ErrNotFound
+	}
+	res := TaskImportResult{Skipped: []MasterImportSkip{}}
+	byName := map[string]string{} // lower(name) -> taskID
+	for _, t := range p.Tasks {
+		byName[strings.ToLower(strings.TrimSpace(t.Name))] = t.ID
+	}
+	now := s.now().Format(time.RFC3339)
+	for i, r := range rows {
+		name := strings.TrimSpace(r.Name)
+		if name == "" {
+			res.Skipped = append(res.Skipped, MasterImportSkip{Row: i + 1, Reason: "nama task kosong"})
+			continue
+		}
+		tid, found := byName[strings.ToLower(name)]
+		if !found {
+			res.Skipped = append(res.Skipped, MasterImportSkip{Row: i + 1, Key: name, Reason: "task tidak ditemukan di proyek"})
+			continue
+		}
+		st := normalizeImportStatus(r.Status)
+		s.repo.MutateTask(projectID, tid, func(t *domain.Task) {
+			if st != "" {
+				t.Status = st
+				t.UpdatedAt = now
+			}
+			if v := strings.TrimSpace(r.Start); v != "" {
+				t.Start = v
+			}
+			if v := strings.TrimSpace(r.Deadline); v != "" {
+				t.Deadline = v
+			}
+			if v := strings.TrimSpace(r.Finish); v != "" {
+				t.Finish = v
+			}
+		})
+		res.Updated++
+	}
+	return res, nil
+}
+
+// normalizeImportStatus maps a free-form status/progress cell to a TaskStatus
+// ("" = leave the task's status unchanged).
+func normalizeImportStatus(v string) domain.TaskStatus {
+	n := strings.ToLower(strings.TrimSpace(v))
+	if n == "" {
+		return ""
+	}
+	switch {
+	case strings.Contains(n, "selesai") || strings.Contains(n, "done") || strings.Contains(n, "complete") || strings.Contains(n, "100") || n == "ya" || n == "y" || n == "v" || n == "✓":
+		return domain.StatusDone
+	case strings.Contains(n, "review") || strings.Contains(n, "cek"):
+		return domain.StatusReview
+	case strings.Contains(n, "progress") || strings.Contains(n, "proses") || strings.Contains(n, "dikerjakan") || strings.Contains(n, "jalan") || strings.Contains(n, "wip"):
+		return domain.StatusProgress
+	case strings.Contains(n, "todo") || strings.Contains(n, "belum") || n == "-":
+		return domain.StatusTodo
+	}
+	return ""
 }
 
 /* ---- Task assignment (flow membagi tugas: by PIC account) -------------- */

@@ -12,6 +12,7 @@ type Config struct {
 	Port        string // HTTP port to listen on
 	AllowOrigin string // CORS allowed origin
 	SeedDemo    bool   // populate sample data on startup
+	UploadDir   string // board attachment files (one file per attachment ID)
 
 	// Deep Revisi AI (GK Kontraktor vs GK TTD vision check). The Ollama KEY is
 	// NOT held here — vision calls are proxied through the auth service, which
@@ -30,6 +31,7 @@ func Load() Config {
 		Port:        getenv("PERENCANAAN_PORT", "8082"),
 		AllowOrigin: getenv("PERENCANAAN_ALLOW_ORIGIN", "*"),
 		SeedDemo:    getenv("PERENCANAAN_SEED_DEMO", "true") != "false",
+		UploadDir:   getenv("PERENCANAAN_UPLOAD_DIR", "data/uploads"),
 
 		OllamaModel:  getenv("OLLAMA_VISION_MODEL", "qwen3.5:397b"),
 		PythonBin:    getenv("PYTHON_BIN", defaultPythonBin()),

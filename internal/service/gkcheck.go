@@ -456,6 +456,13 @@ func (s *Service) visionSingle(token, skill, imgPath string) ([]domain.GKFinding
 	if err != nil {
 		return nil, err
 	}
+	return s.visionSingleURL(token, skill, img)
+}
+
+// visionSingleURL is visionSingle for an already-encoded data: URL image —
+// lets callers with non-PNG sources (board Cek AI on JPG/WebP attachments)
+// keep the correct mime type.
+func (s *Service) visionSingleURL(token, skill, img string) ([]domain.GKFinding, error) {
 	prompt := "Kamu adalah arsitek QC yang memeriksa SATU halaman Gambar Kerja properti Indonesia " +
 		"terhadap checklist standar (tidak ada gambar pembanding). Periksa konsistensi INTERNAL halaman ini: " +
 		"kop gambar (Luas Bangunan/Tanah), dimensi & level, kesesuaian denah dengan tampak/potongan, tinggi kusen. " +

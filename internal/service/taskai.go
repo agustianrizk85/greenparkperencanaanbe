@@ -9,20 +9,56 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"greenpark/perencanaan/internal/domain"
 )
 
-// StartTaskAI kicks off an async single-document analysis of a task's review
-// PDF against the selected skill(s). Returns immediately; poll TaskAIStatus for
-// progress. The task must have an uploaded Doc and the CENTRAL Kunci AI must be
-// set (Panel Admin → Kunci AI). Empty skillNames falls back to the default GK
-// checklist.
-func (s *Service) StartTaskAI(projectID, taskID, token string, skillNames []string) error {
-	data, _, ok := s.repo.TaskDocBytes(projectID, taskID)
+// taskAISource resolves the PDF the Deep Analisis run should analyse. When attID
+// is set it MUST reference a PDF task attachment (mime application/pdf or a .pdf
+// name) — its disk bytes are analysed. When attID is empty it falls back to the
+// task's review Doc, as before. Returns the PDF bytes, a display name (used for
+// the annotated result filename) and a validation error.
+func (s *Service) taskAISource(projectID, taskID, attID string) ([]byte, string, error) {
+	if strings.TrimSpace(attID) != "" {
+		att, path, err := s.TaskAttachmentFile(projectID, taskID, attID)
+		if err != nil {
+			return nil, "", err // ErrNotFound
+		}
+		if !isPDFAttachment(att) {
+			return nil, "", fmt.Errorf("%w: file yang dipilih untuk analisis harus PDF", ErrValidation)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || len(data) == 0 {
+			return nil, "", fmt.Errorf("%w: file lampiran tidak ditemukan di penyimpanan", ErrValidation)
+		}
+		return data, att.Name, nil
+	}
+	data, name, ok := s.repo.TaskDocBytes(projectID, taskID)
 	if !ok || len(data) == 0 {
-		return fmt.Errorf("%w: unggah PDF dulu sebelum analisis AI", ErrValidation)
+		return nil, "", fmt.Errorf("%w: unggah PDF dulu sebelum analisis AI", ErrValidation)
+	}
+	return data, name, nil
+}
+
+// isPDFAttachment reports whether a task attachment is a PDF (by mime or name).
+func isPDFAttachment(att domain.TaskAttachment) bool {
+	if strings.Contains(strings.ToLower(att.Mime), "application/pdf") {
+		return true
+	}
+	return strings.HasSuffix(strings.ToLower(att.Name), ".pdf")
+}
+
+// StartTaskAI kicks off an async single-document analysis of a task PDF against
+// the selected skill(s). Returns immediately; poll TaskAIStatus for progress.
+// The source is EITHER a chosen PDF task attachment (attID set) OR the task's
+// review Doc (attID empty). The CENTRAL Kunci AI must be set (Panel Admin → Kunci
+// AI). Empty skillNames falls back to the default GK checklist.
+func (s *Service) StartTaskAI(projectID, taskID, token string, skillNames []string, attID string) error {
+	data, docName, err := s.taskAISource(projectID, taskID, attID)
+	if err != nil {
+		return err
 	}
 	// Vision runs via auth's central key — verify it is set there first.
 	configured, _, _, err := s.authAIConfig(token)
@@ -51,7 +87,7 @@ func (s *Service) StartTaskAI(projectID, taskID, token string, skillNames []stri
 	if already {
 		return nil // idempotent — a run is already in flight
 	}
-	go s.runTaskAICheck(projectID, taskID, token, skillNames)
+	go s.runTaskAICheck(projectID, taskID, token, skillNames, data, docName)
 	return nil
 }
 
@@ -85,9 +121,8 @@ func (s *Service) setTaskAIProgress(projectID, taskID string, done, total int) {
 	})
 }
 
-func (s *Service) runTaskAICheck(projectID, taskID, token string, skillNames []string) {
-	data, docName, ok := s.repo.TaskDocBytes(projectID, taskID)
-	if !ok || len(data) == 0 {
+func (s *Service) runTaskAICheck(projectID, taskID, token string, skillNames []string, data []byte, docName string) {
+	if len(data) == 0 {
 		s.failTaskAI(projectID, taskID, "dokumen tidak ditemukan")
 		return
 	}

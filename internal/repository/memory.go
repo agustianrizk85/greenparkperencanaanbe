@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"greenpark/perencanaan/internal/domain"
@@ -55,6 +56,12 @@ type Memory struct {
 	nextNo     int // next project number for additions
 	seqWD      int // monotonic counter for work-drawing IDs
 	seqTask    int // monotonic counter for dynamically added task IDs
+
+	// Department Kanban board ("Departemen Perencanaan"). Slice order IS the
+	// display order. Attachment bytes live on disk — metadata only here.
+	boardLists  []*domain.BoardList
+	boardLabels []domain.BoardLabel
+	boardSeq    int // one counter for every board-scoped ID (bl-, cd-, cl-, it-, att-, lb-, cm-)
 }
 
 // CicleBoard returns the stored raw cicle-board mirror (nil if never synced).
@@ -692,6 +699,40 @@ func (m *Memory) Project(id string) (domain.Project, bool) {
 	return *p, true
 }
 
+// DeleteProject removes a project and CASCADES its owned data: its bloks, its
+// kavling, and its task review/annotated doc bytes. Task attachment FILES on disk
+// are removed by the caller (service layer). Returns false if it did not exist.
+func (m *Memory) DeleteProject(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.projects[id]; !ok {
+		return false
+	}
+	delete(m.projects, id)
+	// Cascade: bloks + kavling belonging to this project.
+	nb := m.bloks[:0]
+	for _, b := range m.bloks {
+		if b.ProjectID != id {
+			nb = append(nb, b)
+		}
+	}
+	m.bloks = nb
+	nk := m.kavling[:0]
+	for _, k := range m.kavling {
+		if k.ProjectID != id {
+			nk = append(nk, k)
+		}
+	}
+	m.kavling = nk
+	// Cascade: task doc bytes (review + "/annotated") keyed "projectID/taskID…".
+	for key := range m.docs {
+		if strings.HasPrefix(key, id+"/") {
+			delete(m.docs, key)
+		}
+	}
+	return true
+}
+
 // AddProject creates a new project, building its deliverable tree from the
 // given spec (number of site plans + which categories), and returns it.
 func (m *Memory) AddProject(gp, name, lokasi, luas string, units, types int, spec domain.ProjectSpec) domain.Project {
@@ -849,6 +890,9 @@ type stateSnap struct {
 	Drawings    map[string]*domain.WorkDrawing `json:"drawings"`
 	Docs        map[string][]byte              `json:"docs"`
 	CicleBoard  json.RawMessage                `json:"cicleBoard,omitempty"`
+	BoardLists  []*domain.BoardList            `json:"boardLists,omitempty"`
+	BoardLabels []domain.BoardLabel            `json:"boardLabels,omitempty"`
+	BoardSeq    int                            `json:"boardSeq,omitempty"`
 	NextNo      int                            `json:"nextNo"`
 	SeqWD       int                            `json:"seqWD"`
 	SeqTask     int                            `json:"seqTask"`
@@ -870,7 +914,8 @@ func (m *Memory) SnapshotJSON() ([]byte, error) {
 		Bloks: m.bloks, Kavling: m.kavling,
 		Projects: m.projects, Drawings: m.drawings, Docs: m.docs,
 		CicleBoard: m.cicleBoard,
-		NextNo:     m.nextNo, SeqWD: m.seqWD, SeqTask: m.seqTask,
+		BoardLists: m.boardLists, BoardLabels: m.boardLabels, BoardSeq: m.boardSeq,
+		NextNo: m.nextNo, SeqWD: m.seqWD, SeqTask: m.seqTask,
 		SeqGP: m.seqGP, SeqType: m.seqType, SeqBlok: m.seqBlok, SeqKav: m.seqKav,
 		SeqLebar: m.seqLebar, SeqLokasi: m.seqLokasi,
 	}
@@ -915,6 +960,11 @@ func (m *Memory) LoadJSON(data []byte) error {
 		m.docs = map[string][]byte{}
 	}
 	m.cicleBoard = s.CicleBoard
+	// Board fields are absent from pre-board snapshots — they load as nil/0,
+	// which every board method treats as an empty board (backward compatible).
+	m.boardLists = s.BoardLists
+	m.boardLabels = s.BoardLabels
+	m.boardSeq = s.BoardSeq
 	m.nextNo, m.seqWD, m.seqTask = s.NextNo, s.SeqWD, s.SeqTask
 	return nil
 }
