@@ -966,3 +966,14 @@ func (h *Handler) resetMaster(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset-master"})
 }
+
+// emptyAll wipes EVERYTHING to a blank slate (projects + all masters + kavling),
+// no re-seed. The most destructive admin action.
+func (h *Handler) emptyAll(w http.ResponseWriter, r *http.Request) {
+	user, _ := userFromContext(r.Context())
+	if err := h.svc.EmptyAll(user.Role); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "empty-all"})
+}

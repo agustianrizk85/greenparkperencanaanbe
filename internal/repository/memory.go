@@ -137,6 +137,26 @@ func (m *Memory) ResetMaster() {
 	m.seedProjects()
 }
 
+// EmptyAll wipes EVERYTHING to a truly blank slate — projects+tasks, work
+// drawings, docs, AND every master (GP, tipe bangunan, lebar, lokasi, blok,
+// kavling) — with NO re-seed. User accounts (roster) and the shared board are
+// left intact. Attachment FILES on disk are removed by the caller (service).
+func (m *Memory) EmptyAll() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.projects = map[string]*domain.Project{}
+	m.drawings = map[string]*domain.WorkDrawing{}
+	m.docs = map[string][]byte{}
+	m.gps = nil
+	m.types = nil
+	m.lebars = nil
+	m.lokasis = nil
+	m.bloks = nil
+	m.kavling = nil
+	m.nextNo, m.seqWD, m.seqTask = 0, 0, 0
+	m.seqGP, m.seqType, m.seqLebar, m.seqLokasi, m.seqBlok, m.seqKav = 0, 0, 0, 0, 0, 0
+}
+
 // docKey is the map key for a task's review document bytes.
 func docKey(projectID, taskID string) string { return projectID + "/" + taskID }
 
@@ -314,6 +334,18 @@ func (m *Memory) seedProjects() {
 			m.nextNo = r.No + 1
 		}
 	}
+}
+
+// SeedProjects (re)populates the MASTER portfolio from the embedded seed
+// (projects.json), expanding each into a fresh deliverable task tree. It is the
+// public, lock-taking wrapper over the private seedProjects — meant to run on an
+// already-emptied store (see EmptyAll) so the demo/"Isi Contoh" seed can rebuild
+// the 32 projects with deterministic ids (gp-001..gp-0NN). Callers must NOT hold
+// m.mu.
+func (m *Memory) SeedProjects() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.seedProjects()
 }
 
 /* ---- Users ------------------------------------------------------------- */

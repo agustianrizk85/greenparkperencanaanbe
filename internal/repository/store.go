@@ -45,6 +45,7 @@ type Store interface {
 	DeleteKavling(id string) bool
 
 	// Projects & tasks.
+	SeedProjects() // (re)build the 32-project master portfolio from the embedded seed
 	Projects() []domain.Project
 	Project(id string) (domain.Project, bool)
 	AddProject(gp, name, lokasi, luas string, units, types int, spec domain.ProjectSpec) domain.Project
@@ -74,6 +75,7 @@ type Store interface {
 	// Admin resets.
 	ResetProses()
 	ResetMaster()
+	EmptyAll()
 
 	// Cicle board mirror (raw JSON of the synced Kanban board).
 	CicleBoard() json.RawMessage
@@ -83,6 +85,7 @@ type Store interface {
 	// non-nil nested slices; Delete* return the removed attachment IDs so the
 	// service can delete the files from disk.
 	EnsureBoardSystemLists()
+	ClearBoardCards() // empty every list of its cards, keeping the lists (demo re-seed)
 	Board() []domain.BoardList
 	BoardLabels() []domain.BoardLabel
 	BoardCard(cardID string) (domain.BoardCard, bool)

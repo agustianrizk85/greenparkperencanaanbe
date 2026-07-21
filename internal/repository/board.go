@@ -130,6 +130,18 @@ func (m *Memory) EnsureBoardSystemLists() {
 	m.boardLists = rebuilt
 }
 
+// ClearBoardCards empties every list of its cards while KEEPING the lists
+// themselves (including the 4 fixed system columns). Used by the demo/"Isi
+// Contoh" seed so repeated runs replace the sample cards instead of piling them
+// up. Board labels are left intact. Callers must NOT hold m.mu.
+func (m *Memory) ClearBoardCards() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, l := range m.boardLists {
+		l.Cards = []domain.BoardCard{}
+	}
+}
+
 /* ---- reads --------------------------------------------------------------- */
 
 // Board returns the whole board (lists in display order, cards in display

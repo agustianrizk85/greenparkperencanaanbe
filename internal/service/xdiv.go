@@ -1,0 +1,70 @@
+// Cross-division read surface: lets OTHER department modules (e.g. Legal Permit)
+// discover + link a perencanaan project and pull the deliverables routed to their
+// division — most importantly the Siteplan (tasks with Output=legalpermit). Read
+// only; served over the board submux which already accepts ANY division's SSO
+// token (resolveUserAny). The deliverable DOCUMENT itself is downloaded through
+// the existing board task-doc endpoint (/api/board/task/{pid}/{tid}/doc).
+package service
+
+import "greenpark/perencanaan/internal/domain"
+
+// XDivProject is a minimal project entry for cross-division linking.
+type XDivProject struct {
+	ID   string `json:"id"`
+	GP   string `json:"gp"`
+	Name string `json:"name"`
+}
+
+// XDivDeliverable is one deliverable routed to a division, exposed cross-division.
+type XDivDeliverable struct {
+	ProjectID   string            `json:"projectId"`
+	ProjectName string            `json:"projectName"`
+	GP          string            `json:"gp"`
+	TaskID      string            `json:"taskId"`
+	Category    string            `json:"category"`
+	Group       string            `json:"group"`
+	Deliverable string            `json:"deliverable"`
+	PIC         string            `json:"pic"`
+	Output      domain.Division   `json:"output"`
+	Status      domain.TaskStatus `json:"status"`
+	HasDoc      bool              `json:"hasDoc"`
+	ApprovedBy  string            `json:"approvedBy"`
+	UpdatedAt   string            `json:"updatedAt"`
+}
+
+// XDivProjects returns every project as a minimal {id,gp,name} for a linker.
+func (s *Service) XDivProjects() []XDivProject {
+	out := []XDivProject{}
+	for _, p := range s.repo.Projects() {
+		out = append(out, XDivProject{ID: p.ID, GP: p.GP, Name: p.Name})
+	}
+	return out
+}
+
+// XDivDeliverables returns deliverables whose Output == division (e.g.
+// "legalpermit" → the Siteplan tasks). When projectID is non-empty it is scoped
+// to that project. Empty division returns all division-routed deliverables.
+func (s *Service) XDivDeliverables(projectID string, division domain.Division) []XDivDeliverable {
+	out := []XDivDeliverable{}
+	for _, p := range s.repo.Projects() {
+		if projectID != "" && p.ID != projectID {
+			continue
+		}
+		for _, t := range p.Tasks {
+			if division != "" {
+				if t.Output != division {
+					continue
+				}
+			} else if t.Output == domain.DivNone {
+				continue
+			}
+			out = append(out, XDivDeliverable{
+				ProjectID: p.ID, ProjectName: p.Name, GP: p.GP,
+				TaskID: t.ID, Category: t.Category, Group: t.Group, Deliverable: t.Name,
+				PIC: t.PIC, Output: t.Output, Status: t.Status,
+				HasDoc: t.Doc != nil, ApprovedBy: t.ApprovedBy, UpdatedAt: t.UpdatedAt,
+			})
+		}
+	}
+	return out
+}

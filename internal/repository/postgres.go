@@ -84,8 +84,10 @@ func (p *Persistent) save() error {
 
 /* ---- mutations: delegate to Memory, then persist ----------------------- */
 
-func (p *Persistent) ResetProses() { p.Memory.ResetProses(); _ = p.save() }
-func (p *Persistent) ResetMaster() { p.Memory.ResetMaster(); _ = p.save() }
+func (p *Persistent) ResetProses()  { p.Memory.ResetProses(); _ = p.save() }
+func (p *Persistent) ResetMaster()  { p.Memory.ResetMaster(); _ = p.save() }
+func (p *Persistent) EmptyAll()     { p.Memory.EmptyAll(); _ = p.save() }
+func (p *Persistent) SeedProjects() { p.Memory.SeedProjects(); _ = p.save() }
 
 func (p *Persistent) MutateTask(projectID, taskID string, fn func(*domain.Task)) bool {
 	ok := p.Memory.MutateTask(projectID, taskID, fn)
@@ -298,6 +300,11 @@ func (p *Persistent) SetCicleBoard(data json.RawMessage) {
 
 func (p *Persistent) EnsureBoardSystemLists() {
 	p.Memory.EnsureBoardSystemLists()
+	_ = p.save()
+}
+
+func (p *Persistent) ClearBoardCards() {
+	p.Memory.ClearBoardCards()
 	_ = p.save()
 }
 

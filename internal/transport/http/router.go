@@ -137,6 +137,7 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	authed.HandleFunc("POST /api/admin/seed", h.seedDemo)
 	authed.HandleFunc("POST /api/admin/reset-proses", h.resetProses)
 	authed.HandleFunc("POST /api/admin/reset-master", h.resetMaster)
+	authed.HandleFunc("POST /api/admin/empty-all", h.emptyAll)
 
 	// Department Kanban board ("Departemen Perencanaan") — Trello-style lists,
 	// cards, labels, checklists, attachments (bytes on disk) and comments.
@@ -194,11 +195,19 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	// Deep Analisis skills picker: the available skill names for the source picker.
 	board.HandleFunc("GET /api/board/skills", h.boardSkills)
 
+	// Cross-division read (e.g. Legal Permit pulling the perencanaan Siteplan):
+	// minimal project list + deliverables routed to a division. Uses the same
+	// ANY-division resolveUserAny auth as the board; mounted at /api/xdiv below.
+	// The deliverable DOCUMENT downloads via the existing board task-doc route.
+	board.HandleFunc("GET /api/xdiv/projects", h.xdivProjects)
+	board.HandleFunc("GET /api/xdiv/deliverables", h.xdivDeliverables)
+
 	boardChain := requireAuth(h.resolveUserAny)(bumpOnWrite(h.hub)(board))
 	// Exact "/api/board" registration avoids the ServeMux implicit trailing-slash
 	// redirect (a 301 would drop the Authorization header on some clients).
 	mux.Handle("/api/board", boardChain)
 	mux.Handle("/api/board/", boardChain)
+	mux.Handle("/api/xdiv/", boardChain)
 
 	// Mount the protected mux behind auth, then bump the realtime revision on
 	// every successful write so all connected dashboards refresh instantly.
