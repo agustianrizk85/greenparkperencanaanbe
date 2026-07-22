@@ -108,7 +108,7 @@ func (s *Service) GKDocBytes(wdID, kind string) ([]byte, string, error) {
 // GKStatus for progress. At least ONE document must be uploaded: with both it
 // COMPARES GK Kontraktor vs GK TTD; with only one it QCs that single drawing
 // against the checklist.
-func (s *Service) StartDeepRevisi(wdID, token string) error {
+func (s *Service) StartDeepRevisi(wdID, token string, skillNames []string) error {
 	updated, ok := s.repo.MutateWorkDrawing(wdID, func(d *domain.WorkDrawing) {})
 	if !ok {
 		return ErrNotFound
@@ -134,7 +134,7 @@ func (s *Service) StartDeepRevisi(wdID, token string) error {
 		d.GKFindings = nil
 		d.GKDone, d.GKTotal = 0, 0
 	})
-	go s.runGKCheck(wdID, token)
+	go s.runGKCheck(wdID, token, skillNames)
 	return nil
 }
 
@@ -166,7 +166,7 @@ func (s *Service) setGKProgress(wdID string, done, total int) {
 
 /* ---- Pipeline ------------------------------------------------------------- */
 
-func (s *Service) runGKCheck(wdID, token string) {
+func (s *Service) runGKCheck(wdID, token string, skillNames []string) {
 	kBytes, kName, hasK := s.repo.WorkDrawingDocBytes(wdID, "kontraktor")
 	tBytes, tName, hasT := s.repo.WorkDrawingDocBytes(wdID, "ttd")
 	if !hasK && !hasT {
@@ -205,7 +205,7 @@ func (s *Service) runGKCheck(wdID, token string) {
 		return
 	}
 
-	skill := s.loadGKSkill()
+	skill := s.loadSkillsCombined(skillNames)
 	var findings []domain.GKFinding
 
 	if hasK && hasT {

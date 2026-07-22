@@ -593,8 +593,14 @@ func (h *Handler) getGKDoc(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) startDeepRevisi(w http.ResponseWriter, r *http.Request) {
+	// Optional body {skills:[...]} — the vision check follows the selected skill
+	// checklists (multi-skill). Empty/absent => default GK checklist.
+	var in struct {
+		Skills []string `json:"skills"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&in)
 	// The vision check runs via auth's central key — forward the caller's token.
-	if err := h.svc.StartDeepRevisi(r.PathValue("id"), bearerToken(r)); err != nil {
+	if err := h.svc.StartDeepRevisi(r.PathValue("id"), bearerToken(r), in.Skills); err != nil {
 		writeServiceError(w, err)
 		return
 	}
