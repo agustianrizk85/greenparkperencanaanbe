@@ -41,6 +41,52 @@ func (s *Service) XDivProjects() []XDivProject {
 	return out
 }
 
+// XDivUnit is one kavling (unit) flattened with project + type names resolved,
+// for a cross-division read (e.g. Teknik "Master Unit" — perencanaan is owner).
+type XDivUnit struct {
+	ID           string `json:"id"`
+	ProjectID    string `json:"projectId"`
+	ProjectName  string `json:"projectName"`
+	GP           string `json:"gp"`
+	Blok         string `json:"blok"`
+	NoKav        string `json:"noKav"`
+	Type         string `json:"type"`
+	LuasBangunan int    `json:"luasBangunan"`
+	LuasKavling  int    `json:"luasKavling"`
+	Lebar        string `json:"lebar"`
+}
+
+// XDivUnits returns every kavling across all projects, flattened, with the blok
+// + building-type names resolved. Read-only cross-division surface.
+func (s *Service) XDivUnits() []XDivUnit {
+	out := []XDivUnit{}
+	typeName := map[string]string{}
+	for _, t := range s.repo.BuildingTypes() {
+		typeName[t.ID] = t.Name
+	}
+	for _, p := range s.repo.Projects() {
+		blokName := map[string]string{}
+		for _, b := range s.repo.BloksByProject(p.ID) {
+			blokName[b.ID] = b.Name
+		}
+		for _, k := range s.repo.KavlingByProject(p.ID) {
+			out = append(out, XDivUnit{
+				ID:           k.ID,
+				ProjectID:    p.ID,
+				ProjectName:  p.Name,
+				GP:           p.GP,
+				Blok:         blokName[k.BlokID],
+				NoKav:        k.NoKav,
+				Type:         typeName[k.TypeID],
+				LuasBangunan: k.LuasBangunan,
+				LuasKavling:  k.LuasKavling,
+				Lebar:        k.LebarKavling,
+			})
+		}
+	}
+	return out
+}
+
 // XDivDeliverables returns deliverables whose Output == division (e.g.
 // "legalpermit" → the Siteplan tasks). When projectID is non-empty it is scoped
 // to that project. Empty division returns all division-routed deliverables.

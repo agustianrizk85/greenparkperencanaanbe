@@ -200,6 +200,7 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	// ANY-division resolveUserAny auth as the board; mounted at /api/xdiv below.
 	// The deliverable DOCUMENT downloads via the existing board task-doc route.
 	board.HandleFunc("GET /api/xdiv/projects", h.xdivProjects)
+	board.HandleFunc("GET /api/xdiv/units", h.xdivUnits)
 	board.HandleFunc("GET /api/xdiv/deliverables", h.xdivDeliverables)
 
 	boardChain := requireAuth(h.resolveUserAny)(bumpOnWrite(h.hub)(board))

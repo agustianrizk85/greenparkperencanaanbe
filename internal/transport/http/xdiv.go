@@ -13,6 +13,12 @@ func (h *Handler) xdivProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": h.svc.XDivProjects()})
 }
 
+// xdivUnits returns every kavling (unit) flattened, for a cross-division reader
+// (Teknik "Master Unit"). Any authed SSO user (any division) may read it.
+func (h *Handler) xdivUnits(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"items": h.svc.XDivUnits()})
+}
+
 // xdivDeliverables returns deliverables routed to a division, optionally scoped
 // to one project — e.g. ?division=legalpermit&projectId=gp-001 yields that
 // project's Siteplan tasks (Output=legalpermit) with hasDoc + taskId so the
