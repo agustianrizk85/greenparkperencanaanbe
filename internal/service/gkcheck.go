@@ -395,8 +395,9 @@ func (s *Service) callVision(token, prompt string, images []string) ([]domain.GK
 	if base == "" {
 		base = "http://127.0.0.1:8090/api"
 	}
-	// Empty model → auth uses its central VISION model (Panel Admin → Kunci AI).
-	body, _ := json.Marshal(map[string]any{"model": "", "prompt": prompt, "images": images})
+	// Empty model + division → auth resolves the Perencanaan VISION model
+	// (AI › Model), falling back to the central default (Panel Admin → Kunci AI).
+	body, _ := json.Marshal(map[string]any{"model": "", "division": "perencanaan", "prompt": prompt, "images": images})
 	ctx, cancel := context.WithTimeout(context.Background(), 115*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/ai/vision", bytes.NewReader(body))
