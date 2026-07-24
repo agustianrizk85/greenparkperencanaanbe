@@ -43,8 +43,6 @@ type MasterData struct {
 	Divisions []DivisionInfo            `json:"divisions"`
 	GPs       []domain.GP               `json:"gps"`
 	Types     []domain.BuildingType     `json:"types"`
-	Lebars    []domain.Lebar            `json:"lebars"`
-	Lokasis   []domain.Lokasi           `json:"lokasis"`
 	SeedCount int                       `json:"seedCount"` // number of seeded (built-in) projects
 }
 
@@ -68,8 +66,6 @@ func (s *Service) Master(token string) MasterData {
 		Divisions: []DivisionInfo{},
 		GPs:       s.repo.GPs(),
 		Types:     s.repo.BuildingTypes(),
-		Lebars:    s.repo.Lebars(),
-		Lokasis:   s.repo.Lokasis(),
 	}
 	for _, p := range projects {
 		// Jumlah Unit/Tipe are DERIVED from kavling (Fase 2), not manual counts.

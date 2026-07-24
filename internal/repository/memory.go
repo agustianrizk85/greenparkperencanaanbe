@@ -39,14 +39,10 @@ type Memory struct {
 	departments []domain.Department       // central catalogue, synced from auth SSO
 	gps         []domain.GP               // grup master
 	types       []domain.BuildingType     // tipe bangunan master
-	lebars      []domain.Lebar            // lebar kavling master
-	lokasis     []domain.Lokasi           // lokasi master
 	bloks       []domain.Blok             // per-project phase/cluster master
 	kavling     []domain.Kavling          // per-project units
 	seqGP       int                       // id counter for GPs
 	seqType     int                       // id counter for building types
-	seqLebar    int
-	seqLokasi   int
 	seqBlok     int // id counter for bloks
 	seqKav      int // id counter for kavling
 	projects    map[string]*domain.Project // keyed by project ID
@@ -149,12 +145,10 @@ func (m *Memory) EmptyAll() {
 	m.docs = map[string][]byte{}
 	m.gps = nil
 	m.types = nil
-	m.lebars = nil
-	m.lokasis = nil
 	m.bloks = nil
 	m.kavling = nil
 	m.nextNo, m.seqWD, m.seqTask = 0, 0, 0
-	m.seqGP, m.seqType, m.seqLebar, m.seqLokasi, m.seqBlok, m.seqKav = 0, 0, 0, 0, 0, 0
+	m.seqGP, m.seqType, m.seqBlok, m.seqKav = 0, 0, 0, 0
 }
 
 // docKey is the map key for a task's review document bytes.
@@ -500,80 +494,15 @@ func (m *Memory) DeleteBuildingType(id string) bool {
 	return false
 }
 
-/* ---- Lebar master ---- */
-
-func (m *Memory) Lebars() []domain.Lebar {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	out := make([]domain.Lebar, len(m.lebars))
-	copy(out, m.lebars)
-	return out
-}
-
-func (m *Memory) SaveLebar(l domain.Lebar) domain.Lebar {
+// MutateBuildingType applies fn to a type in place under the lock. Returns
+// whether the type was found. Used for attaching/detaching images without
+// touching the rest of the record.
+func (m *Memory) MutateBuildingType(id string, fn func(*domain.BuildingType)) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if l.ID == "" {
-		m.seqLebar++
-		l.ID = fmt.Sprintf("lebar-%d", m.seqLebar)
-		m.lebars = append(m.lebars, l)
-		return l
-	}
-	for i := range m.lebars {
-		if m.lebars[i].ID == l.ID {
-			m.lebars[i] = l
-			return l
-		}
-	}
-	return domain.Lebar{}
-}
-
-func (m *Memory) DeleteLebar(id string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for i := range m.lebars {
-		if m.lebars[i].ID == id {
-			m.lebars = append(m.lebars[:i], m.lebars[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
-/* ---- Lokasi master ---- */
-
-func (m *Memory) Lokasis() []domain.Lokasi {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	out := make([]domain.Lokasi, len(m.lokasis))
-	copy(out, m.lokasis)
-	return out
-}
-
-func (m *Memory) SaveLokasi(l domain.Lokasi) domain.Lokasi {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if l.ID == "" {
-		m.seqLokasi++
-		l.ID = fmt.Sprintf("lokasi-%d", m.seqLokasi)
-		m.lokasis = append(m.lokasis, l)
-		return l
-	}
-	for i := range m.lokasis {
-		if m.lokasis[i].ID == l.ID {
-			m.lokasis[i] = l
-			return l
-		}
-	}
-	return domain.Lokasi{}
-}
-
-func (m *Memory) DeleteLokasi(id string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for i := range m.lokasis {
-		if m.lokasis[i].ID == id {
-			m.lokasis = append(m.lokasis[:i], m.lokasis[i+1:]...)
+	for i := range m.types {
+		if m.types[i].ID == id {
+			fn(&m.types[i])
 			return true
 		}
 	}
@@ -914,8 +843,6 @@ type stateSnap struct {
 	Departments []domain.Department            `json:"departments,omitempty"`
 	GPs         []domain.GP                    `json:"gps,omitempty"`
 	Types       []domain.BuildingType          `json:"types,omitempty"`
-	Lebars      []domain.Lebar                 `json:"lebars,omitempty"`
-	Lokasis     []domain.Lokasi                `json:"lokasis,omitempty"`
 	Bloks       []domain.Blok                  `json:"bloks,omitempty"`
 	Kavling     []domain.Kavling               `json:"kavling,omitempty"`
 	Projects    map[string]*domain.Project     `json:"projects"`
@@ -932,8 +859,6 @@ type stateSnap struct {
 	SeqType     int                            `json:"seqType"`
 	SeqBlok     int                            `json:"seqBlok"`
 	SeqKav      int                            `json:"seqKav"`
-	SeqLebar    int                            `json:"seqLebar"`
-	SeqLokasi   int                            `json:"seqLokasi"`
 }
 
 // SnapshotJSON serialises the entire store (including password material) for
@@ -942,14 +867,13 @@ func (m *Memory) SnapshotJSON() ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	s := stateSnap{
-		Departments: m.departments, GPs: m.gps, Types: m.types, Lebars: m.lebars, Lokasis: m.lokasis,
+		Departments: m.departments, GPs: m.gps, Types: m.types,
 		Bloks: m.bloks, Kavling: m.kavling,
 		Projects: m.projects, Drawings: m.drawings, Docs: m.docs,
 		CicleBoard: m.cicleBoard,
 		BoardLists: m.boardLists, BoardLabels: m.boardLabels, BoardSeq: m.boardSeq,
 		NextNo: m.nextNo, SeqWD: m.seqWD, SeqTask: m.seqTask,
 		SeqGP: m.seqGP, SeqType: m.seqType, SeqBlok: m.seqBlok, SeqKav: m.seqKav,
-		SeqLebar: m.seqLebar, SeqLokasi: m.seqLokasi,
 	}
 	for _, u := range m.users {
 		s.Users = append(s.Users, userSnap{u.Username, u.Name, u.Role, u.Salt, u.PasswordHash})
@@ -972,13 +896,10 @@ func (m *Memory) LoadJSON(data []byte) error {
 	m.departments = s.Departments
 	m.gps = s.GPs
 	m.types = s.Types
-	m.lebars = s.Lebars
-	m.lokasis = s.Lokasis
 	m.bloks = s.Bloks
 	m.kavling = s.Kavling
 	m.seqGP, m.seqType = s.SeqGP, s.SeqType
 	m.seqBlok, m.seqKav = s.SeqBlok, s.SeqKav
-	m.seqLebar, m.seqLokasi = s.SeqLebar, s.SeqLokasi
 	m.projects = s.Projects
 	if m.projects == nil {
 		m.projects = map[string]*domain.Project{}

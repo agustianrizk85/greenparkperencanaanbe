@@ -30,6 +30,9 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	// token (header OR ?token=), Range-served so <img>/<video>/<embed> preview and
 	// video seeking work. More specific than /api/board/, so it wins these GETs.
 	mux.HandleFunc("GET /api/board/task/{projectId}/{taskId}/attachments/{attId}", h.boardTaskServeAttachment)
+	// Building-type reference photos: PUBLIC, self-validated token (header OR
+	// ?token=) so <img> tags can load them; native perencanaan tokens only.
+	mux.HandleFunc("GET /api/building-types/{id}/images/{imgId}", h.buildingTypeServeImage)
 
 	// --- Protected ---
 	authed := http.NewServeMux()
@@ -112,13 +115,9 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	authed.HandleFunc("POST /api/building-types", h.saveBuildingType)
 	authed.HandleFunc("PATCH /api/building-types/{id}", h.saveBuildingType)
 	authed.HandleFunc("DELETE /api/building-types/{id}", h.deleteBuildingType)
-	authed.HandleFunc("POST /api/lebars", h.saveLebar)
-	authed.HandleFunc("PATCH /api/lebars/{id}", h.saveLebar)
-	authed.HandleFunc("DELETE /api/lebars/{id}", h.deleteLebar)
-	authed.HandleFunc("POST /api/lokasis", h.saveLokasi)
-	authed.HandleFunc("PATCH /api/lokasis/{id}", h.saveLokasi)
-	authed.HandleFunc("DELETE /api/lokasis/{id}", h.deleteLokasi)
-
+	// Reference-photo gallery per house-type master (multi-file, CEO/Kadep only).
+	authed.HandleFunc("POST /api/building-types/{id}/images", h.buildingTypeUploadImage)
+	authed.HandleFunc("DELETE /api/building-types/{id}/images/{imgId}", h.buildingTypeDeleteImage)
 	// Blok + Kavling per project (Fase 2). Project-scoped so projectId is always
 	// known (needed to validate blok/type references on update).
 	authed.HandleFunc("POST /api/projects/{projectId}/bloks", h.saveBlok)

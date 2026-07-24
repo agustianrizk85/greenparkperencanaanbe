@@ -41,23 +41,22 @@ type GP struct {
 // BuildingType is a reusable house-type master (Garnet, Ruby, …) with its
 // standard building + land area, referenced by kavling.
 type BuildingType struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`         // Garnet
-	LuasBangunan int    `json:"luasBangunan"` // 42
-	LuasTanah    int    `json:"luasTanah"`    // 32
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`         // Garnet
+	LuasBangunan int                 `json:"luasBangunan"` // 42
+	LuasTanah    int                 `json:"luasTanah"`    // 32
+	Images       []BuildingTypeImage `json:"images,omitempty"`
 }
 
-// Lebar is a kavling-frontage category master (L3.5, L4, L5) — a controlled
-// vocabulary so kavling pick a value instead of free-typing.
-type Lebar struct {
+// BuildingTypeImage is one reference photo attached to a house-type master
+// (denah / contoh rumah). Bytes live on disk at <uploadDir>/<id>.
+type BuildingTypeImage struct {
 	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-// Lokasi is a location master (Leuwinanggung, Curug, …) reused across projects.
-type Lokasi struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	Name string `json:"name"` // original filename
+	Size int64  `json:"size"` // bytes
+	Mime string `json:"mime"`
+	By   string `json:"by"` // uploader username
+	At   string `json:"at"` // RFC3339
 }
 
 // Blok is a phase/cluster grouping WITHIN a project (A, B, "Verci 3 Ekstensi").
@@ -68,7 +67,9 @@ type Blok struct {
 }
 
 // Kavling is one unit/plot in a project: it sits in a Blok and is built to a
-// BuildingType, with its actual plot size + frontage.
+// BuildingType, with its actual plot size + frontage. LebarKavling is the
+// plot's numeric size — it absorbed the old separate "Luas Kavling" (land
+// plot area) field since imported sheets only ever carried one such number.
 type Kavling struct {
 	ID           string `json:"id"`
 	ProjectID    string `json:"projectId"`
@@ -76,8 +77,7 @@ type Kavling struct {
 	NoKav        string `json:"noKav"`        // A1
 	TypeID       string `json:"typeId"`       // → BuildingType ("" = unset)
 	LuasBangunan int    `json:"luasBangunan"` // actual (usually = type's)
-	LuasKavling  int    `json:"luasKavling"`  // actual land plot
-	LebarKavling string `json:"lebarKavling"` // L4, L3.5
+	LebarKavling string `json:"lebarKavling"` // plot size, e.g. "49", "L4"
 }
 
 // Division is a downstream consumer that a finished deliverable is routed to.

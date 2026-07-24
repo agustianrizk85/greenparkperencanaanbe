@@ -10,33 +10,35 @@ import "greenpark/perencanaan/internal/domain"
 
 // XDivProject is a minimal project entry for cross-division linking.
 type XDivProject struct {
-	ID   string `json:"id"`
-	GP   string `json:"gp"`
-	Name string `json:"name"`
+	ID     string `json:"id"`
+	GP     string `json:"gp"`
+	Name   string `json:"name"`
+	Lokasi string `json:"lokasi"`
 }
 
 // XDivDeliverable is one deliverable routed to a division, exposed cross-division.
 type XDivDeliverable struct {
-	ProjectID   string            `json:"projectId"`
-	ProjectName string            `json:"projectName"`
-	GP          string            `json:"gp"`
-	TaskID      string            `json:"taskId"`
-	Category    string            `json:"category"`
-	Group       string            `json:"group"`
-	Deliverable string            `json:"deliverable"`
-	PIC         string            `json:"pic"`
-	Output      domain.Division   `json:"output"`
-	Status      domain.TaskStatus `json:"status"`
-	HasDoc      bool              `json:"hasDoc"`
-	ApprovedBy  string            `json:"approvedBy"`
-	UpdatedAt   string            `json:"updatedAt"`
+	ProjectID   string                  `json:"projectId"`
+	ProjectName string                  `json:"projectName"`
+	GP          string                  `json:"gp"`
+	TaskID      string                  `json:"taskId"`
+	Category    string                  `json:"category"`
+	Group       string                  `json:"group"`
+	Deliverable string                  `json:"deliverable"`
+	PIC         string                  `json:"pic"`
+	Output      domain.Division         `json:"output"`
+	Status      domain.TaskStatus       `json:"status"`
+	HasDoc      bool                    `json:"hasDoc"`
+	ApprovedBy  string                  `json:"approvedBy"`
+	UpdatedAt   string                  `json:"updatedAt"`
+	Attachments []domain.TaskAttachment `json:"attachments,omitempty"`
 }
 
 // XDivProjects returns every project as a minimal {id,gp,name} for a linker.
 func (s *Service) XDivProjects() []XDivProject {
 	out := []XDivProject{}
 	for _, p := range s.repo.Projects() {
-		out = append(out, XDivProject{ID: p.ID, GP: p.GP, Name: p.Name})
+		out = append(out, XDivProject{ID: p.ID, GP: p.GP, Name: p.Name, Lokasi: p.Lokasi})
 	}
 	return out
 }
@@ -52,7 +54,6 @@ type XDivUnit struct {
 	NoKav        string `json:"noKav"`
 	Type         string `json:"type"`
 	LuasBangunan int    `json:"luasBangunan"`
-	LuasKavling  int    `json:"luasKavling"`
 	Lebar        string `json:"lebar"`
 }
 
@@ -79,7 +80,6 @@ func (s *Service) XDivUnits() []XDivUnit {
 				NoKav:        k.NoKav,
 				Type:         typeName[k.TypeID],
 				LuasBangunan: k.LuasBangunan,
-				LuasKavling:  k.LuasKavling,
 				Lebar:        k.LebarKavling,
 			})
 		}
@@ -109,6 +109,7 @@ func (s *Service) XDivDeliverables(projectID string, division domain.Division) [
 				TaskID: t.ID, Category: t.Category, Group: t.Group, Deliverable: t.Name,
 				PIC: t.PIC, Output: t.Output, Status: t.Status,
 				HasDoc: t.Doc != nil, ApprovedBy: t.ApprovedBy, UpdatedAt: t.UpdatedAt,
+				Attachments: t.Attachments,
 			})
 		}
 	}

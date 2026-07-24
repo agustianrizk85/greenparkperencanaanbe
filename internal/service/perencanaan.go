@@ -198,23 +198,22 @@ type ProjectImportRow struct {
 // ProjectImportResult summarizes a bulk project import. Projects are create-only
 // (no update path that preserves the task tree), so existing names are skipped.
 type ProjectImportResult struct {
-	Created       int                `json:"created"`
-	Updated       int                `json:"updated"` // always 0 (kept for FE parity)
-	GPsCreated    []string           `json:"gpsCreated"`
-	LokasiCreated []string           `json:"lokasiCreated"`
-	Skipped       []MasterImportSkip `json:"skipped"`
+	Created    int                `json:"created"`
+	Updated    int                `json:"updated"` // always 0 (kept for FE parity)
+	GPsCreated []string           `json:"gpsCreated"`
+	Skipped    []MasterImportSkip `json:"skipped"`
 }
 
 // ImportProjects bulk-creates projects from parsed rows, applying ONE shared
 // deliverable template (sitePlans / includeUnit / includeKawasan) to all of them.
-// Missing GP + Lokasi masters are auto-created (so the pickers stay clean). When
+// Missing GP masters are auto-created (so the picker stays clean). When
 // skipExisting is true a row whose Name already exists is skipped (projects have
 // no safe in-place update — it would rebuild the task tree). CEO / Kadep only.
 func (s *Service) ImportProjects(role string, rows []ProjectImportRow, sitePlans int, includeUnit, includeKawasan, skipExisting bool) (ProjectImportResult, error) {
 	if !canManage(role) {
 		return ProjectImportResult{}, ErrForbidden
 	}
-	res := ProjectImportResult{GPsCreated: []string{}, LokasiCreated: []string{}, Skipped: []MasterImportSkip{}}
+	res := ProjectImportResult{GPsCreated: []string{}, Skipped: []MasterImportSkip{}}
 	eq := func(a, b string) bool { return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b)) }
 
 	for i, r := range rows {
@@ -252,19 +251,6 @@ func (s *Service) ImportProjects(role string, rows []ProjectImportRow, sitePlans
 			}
 		}
 		lokasi := strings.TrimSpace(r.Lokasi)
-		if lokasi != "" {
-			found := false
-			for _, l := range s.repo.Lokasis() {
-				if eq(l.Name, lokasi) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				s.repo.SaveLokasi(domain.Lokasi{Name: lokasi})
-				res.LokasiCreated = append(res.LokasiCreated, lokasi)
-			}
-		}
 		if _, err := s.AddProject(role, AddProjectInput{
 			GP: gp, Name: name, Lokasi: lokasi, Luas: strings.TrimSpace(r.Luas),
 			SitePlans: sitePlans, IncludeUnit: includeUnit, IncludeKawasan: includeKawasan,

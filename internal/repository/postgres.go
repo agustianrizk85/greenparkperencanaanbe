@@ -146,25 +146,8 @@ func (p *Persistent) DeleteBuildingType(id string) bool {
 	return ok
 }
 
-func (p *Persistent) SaveLebar(l domain.Lebar) domain.Lebar {
-	out := p.Memory.SaveLebar(l)
-	_ = p.save()
-	return out
-}
-func (p *Persistent) DeleteLebar(id string) bool {
-	ok := p.Memory.DeleteLebar(id)
-	if ok {
-		_ = p.save()
-	}
-	return ok
-}
-func (p *Persistent) SaveLokasi(l domain.Lokasi) domain.Lokasi {
-	out := p.Memory.SaveLokasi(l)
-	_ = p.save()
-	return out
-}
-func (p *Persistent) DeleteLokasi(id string) bool {
-	ok := p.Memory.DeleteLokasi(id)
+func (p *Persistent) MutateBuildingType(id string, fn func(*domain.BuildingType)) bool {
+	ok := p.Memory.MutateBuildingType(id, fn)
 	if ok {
 		_ = p.save()
 	}

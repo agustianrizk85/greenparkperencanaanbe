@@ -139,7 +139,7 @@ var demoBuildingTypes = []domain.BuildingType{
 	{Name: "Safir", LuasBangunan: 45, LuasTanah: 72},
 }
 
-// demoLebars is the controlled kavling-frontage vocabulary for the sample.
+// demoLebars is the sample kavling plot-size rotation used to seed demo data.
 var demoLebars = []string{"L3.5", "L4", "L5", "L6"}
 
 // seedMasters derives the shared masters (GP + lokasi) from the freshly re-seeded
@@ -150,9 +150,8 @@ var demoLebars = []string{"L3.5", "L4", "L5", "L6"}
 func (s *Service) seedMasters() {
 	projects := s.repo.Projects()
 
-	// GP + Lokasi masters, distinct in first-seen order, derived from the portfolio.
+	// GP masters, distinct in first-seen order, derived from the portfolio.
 	seenGP := map[string]bool{}
-	seenLok := map[string]bool{}
 	for _, p := range projects {
 		if p.GP != "" && !seenGP[p.GP] {
 			seenGP[p.GP] = true
@@ -162,25 +161,18 @@ func (s *Service) seedMasters() {
 			}
 			s.repo.SaveGP(domain.GP{Code: p.GP, Name: name})
 		}
-		if p.Lokasi != "" && !seenLok[p.Lokasi] {
-			seenLok[p.Lokasi] = true
-			s.repo.SaveLokasi(domain.Lokasi{Name: p.Lokasi})
-		}
 	}
 
-	// Tipe bangunan + lebar masters. Keep the stored building-type copies (with
+	// Tipe bangunan masters. Keep the stored building-type copies (with
 	// generated ids) so kavling can link against a real TypeID.
 	types := make([]domain.BuildingType, 0, len(demoBuildingTypes))
 	for _, t := range demoBuildingTypes {
 		types = append(types, s.repo.SaveBuildingType(t))
 	}
-	for _, name := range demoLebars {
-		s.repo.SaveLebar(domain.Lebar{Name: name})
-	}
 
 	// Per-project bloks + kavling. Rotate type/lebar/blok deterministically so the
 	// data is varied yet reproducible; every TypeID/BlokID is a real seeded id and
-	// LebarKavling is a real lebar NAME.
+	// LebarKavling rotates through the demo width vocabulary.
 	for _, p := range projects {
 		blokNames := []string{"A"}
 		if p.Units > 3 {
@@ -206,7 +198,6 @@ func (s *Service) seedMasters() {
 				NoKav:        fmt.Sprintf("%s%d", blok.Name, i+1),
 				TypeID:       t.ID,
 				LuasBangunan: t.LuasBangunan,
-				LuasKavling:  t.LuasTanah + 6 + (i%3)*6,
 				LebarKavling: demoLebars[i%len(demoLebars)],
 			})
 		}

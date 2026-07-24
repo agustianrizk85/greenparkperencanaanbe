@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"greenpark/perencanaan/internal/authmw"
 	"greenpark/perencanaan/internal/domain"
@@ -779,53 +782,135 @@ func (h *Handler) deleteBuildingType(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *Handler) saveLebar(w http.ResponseWriter, r *http.Request) {
+/* ---- Building-type reference photos (multi-file gallery per master) ----------
+
+Mirrors the board task-attachment flow exactly: streamed multipart upload
+(never buffered — up to 1 GiB), disk bytes at <uploadDir>/<imgId>, served with
+Range so <img> previews work. Upload/delete are CEO/Kadep only (SaveBuildingType
+rights); the GET is on the PUBLIC mux (self-validated header OR ?token=) so
+<img> tags can load them directly. */
+
+func (h *Handler) buildingTypeUploadImage(w http.ResponseWriter, r *http.Request) {
 	user, _ := userFromContext(r.Context())
-	var in domain.Lebar
-	if !decodeJSON(w, r, &in) {
+	typeID := r.PathValue("id")
+
+	if !service.CanManageBuildingTypes(user.Role) {
+		writeError(w, http.StatusForbidden, "hanya CEO/Kadep yang dapat mengunggah gambar")
 		return
 	}
-	if id := r.PathValue("id"); id != "" {
-		in.ID = id
-	}
-	l, err := h.svc.SaveLebar(user.Role, in)
+
+	r.Body = http.MaxBytesReader(w, r.Body, service.MaxBoardAttachmentBytes+16<<20)
+	mr, err := r.MultipartReader()
 	if err != nil {
-		writeServiceError(w, err)
+		writeError(w, http.StatusBadRequest, "upload harus multipart/form-data dengan field \"file\"")
 		return
 	}
-	writeJSON(w, http.StatusOK, l)
+
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			if maxBytesExceeded(err) {
+				writeError(w, http.StatusRequestEntityTooLarge, boardUploadLimitMsg)
+				return
+			}
+			writeError(w, http.StatusBadRequest, "upload multipart tidak valid")
+			return
+		}
+		if part.FormName() != "file" {
+			_, _ = io.Copy(io.Discard, part)
+			continue
+		}
+
+		filename := filepath.Base(strings.TrimSpace(part.FileName()))
+		if filename == "." || filename == string(filepath.Separator) {
+			filename = ""
+		}
+		partMime := part.Header.Get("Content-Type")
+
+		tmp, err := os.CreateTemp(h.svc.UploadDir(), ".upload-*.tmp")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "gagal membuat file sementara")
+			return
+		}
+		tmpPath := tmp.Name()
+		n, copyErr := io.Copy(tmp, io.LimitReader(part, service.MaxBoardAttachmentBytes+1))
+		closeErr := tmp.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(tmpPath)
+			if maxBytesExceeded(copyErr) {
+				writeError(w, http.StatusRequestEntityTooLarge, boardUploadLimitMsg)
+				return
+			}
+			writeError(w, http.StatusBadRequest, "gagal membaca file upload")
+			return
+		}
+		if n > service.MaxBoardAttachmentBytes {
+			_ = os.Remove(tmpPath)
+			writeError(w, http.StatusRequestEntityTooLarge, boardUploadLimitMsg)
+			return
+		}
+
+		img, err := h.svc.AddBuildingTypeImage(user, typeID, filename, partMime, tmpPath, n)
+		if err != nil {
+			_ = os.Remove(tmpPath)
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, img)
+		return
+	}
+	writeError(w, http.StatusBadRequest, "field \"file\" wajib diisi")
 }
-func (h *Handler) deleteLebar(w http.ResponseWriter, r *http.Request) {
+
+func (h *Handler) buildingTypeDeleteImage(w http.ResponseWriter, r *http.Request) {
 	user, _ := userFromContext(r.Context())
-	if err := h.svc.DeleteLebar(user.Role, r.PathValue("id")); err != nil {
+	if err := h.svc.DeleteBuildingTypeImage(user.Role, r.PathValue("id"), r.PathValue("imgId")); err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
-func (h *Handler) saveLokasi(w http.ResponseWriter, r *http.Request) {
-	user, _ := userFromContext(r.Context())
-	var in domain.Lokasi
-	if !decodeJSON(w, r, &in) {
+
+// buildingTypeServeImage serves a reference photo with Range support. PUBLIC
+// route: self-validated token (Authorization header OR ?token= query) so
+// <img> tags can load it. Native perencanaan tokens only (resolveUser).
+func (h *Handler) buildingTypeServeImage(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+	if _, ok := h.resolveUser(token); !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	if id := r.PathValue("id"); id != "" {
-		in.ID = id
-	}
-	l, err := h.svc.SaveLokasi(user.Role, in)
+	img, path, err := h.svc.BuildingTypeImageFile(r.PathValue("id"), r.PathValue("imgId"))
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, l)
-}
-func (h *Handler) deleteLokasi(w http.ResponseWriter, r *http.Request) {
-	user, _ := userFromContext(r.Context())
-	if err := h.svc.DeleteLokasi(user.Role, r.PathValue("id")); err != nil {
-		writeServiceError(w, err)
+	f, err := os.Open(path)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "file gambar tidak ditemukan di penyimpanan")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "gagal membaca file gambar")
+		return
+	}
+	if img.Mime != "" {
+		w.Header().Set("Content-Type", img.Mime)
+	}
+	disp := "inline"
+	if r.URL.Query().Get("download") == "1" {
+		disp = "attachment"
+	}
+	w.Header().Set("Content-Disposition", contentDisposition(disp, img.Name))
+	http.ServeContent(w, r, "", fi.ModTime(), f)
 }
 
 /* ---- Blok + Kavling (Fase 2) ---- */

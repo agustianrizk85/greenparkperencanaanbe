@@ -29,13 +29,9 @@ type Store interface {
 	BuildingTypes() []domain.BuildingType
 	SaveBuildingType(t domain.BuildingType) domain.BuildingType
 	DeleteBuildingType(id string) bool
-	Lebars() []domain.Lebar
-	SaveLebar(l domain.Lebar) domain.Lebar
-	DeleteLebar(id string) bool
-	Lokasis() []domain.Lokasi
-	SaveLokasi(l domain.Lokasi) domain.Lokasi
-	DeleteLokasi(id string) bool
-
+	// MutateBuildingType applies fn to a type in place under the lock — used for
+	// image attach/detach so it never clobbers a concurrent metadata edit.
+	MutateBuildingType(id string, fn func(*domain.BuildingType)) bool
 	// Blok + kavling (Fase 2) — per-project.
 	BloksByProject(projectID string) []domain.Blok
 	SaveBlok(b domain.Blok) domain.Blok

@@ -63,7 +63,7 @@ func (s *Service) SaveKavling(actorRole, projectID string, in domain.Kavling) (d
 	if in.BlokID != "" && !hasID(s.repo.BloksByProject(projectID), func(b domain.Blok) string { return b.ID }, in.BlokID) {
 		return domain.Kavling{}, fmt.Errorf("%w: blok bukan milik proyek ini", ErrValidation)
 	}
-	if in.LuasBangunan < 0 || in.LuasKavling < 0 {
+	if in.LuasBangunan < 0 {
 		return domain.Kavling{}, fmt.Errorf("%w: luas tidak boleh negatif", ErrValidation)
 	}
 	if in.ID == "" {
@@ -92,8 +92,7 @@ type KavlingImportRow struct {
 	Tipe     string `json:"tipe"`
 	Blok     string `json:"blok"`
 	Bangunan int    `json:"bangunan"`
-	Kavling  int    `json:"kavling"`
-	Lebar    string `json:"lebar"`
+	Lebar    string `json:"lebar"` // plot size — absorbed the old separate "Kavling" (luas) column
 }
 
 // KavlingImportSkip records a row that could not be imported.
@@ -180,26 +179,12 @@ func (s *Service) ImportKavling(actorRole, projectID string, rows []KavlingImpor
 			}
 		}
 
-		// Lebar — kavling stores the name string; create the master if missing so
-		// it shows up in the dropdown.
+		// Lebar (plot size) — free text, stored directly on the kavling.
 		lebar := strings.TrimSpace(r.Lebar)
-		if lebar != "" {
-			has := false
-			for _, l := range s.repo.Lebars() {
-				if eq(l.Name, lebar) {
-					has = true
-					break
-				}
-			}
-			if !has {
-				s.repo.SaveLebar(domain.Lebar{Name: lebar})
-				res.LebarsCreated = append(res.LebarsCreated, lebar)
-			}
-		}
 
 		k := domain.Kavling{
 			ProjectID: projectID, NoKav: noKav, TypeID: typeID, BlokID: blokID,
-			LuasBangunan: luasBangunan, LuasKavling: r.Kavling, LebarKavling: lebar,
+			LuasBangunan: luasBangunan, LebarKavling: lebar,
 		}
 		if upsert {
 			if ex, ok := s.kavlingByNo(projectID, noKav); ok {
